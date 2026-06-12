@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -93,6 +93,13 @@ type InstagramStatus = {
   hasVerifyToken: boolean;
   hasAppSecret: boolean;
   dryRun: boolean;
+};
+
+type CommentSyncResponse = {
+  checked: number;
+  acted: number;
+  failed?: number;
+  errors?: string[];
 };
 
 type InstagramMediaItem = {
@@ -203,6 +210,7 @@ function App({ currentView }: AppProps) {
   const [mediaLoading, setMediaLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const autoSyncInFlight = useRef(false);
 
   const selectedMedia =
     media.find((mediaItem) => mediaItem.id === selectedMediaId) ?? null;
@@ -220,6 +228,14 @@ function App({ currentView }: AppProps) {
   });
   const activeAnyRules = rules.filter(
     (rule) => rule.active && rule.triggerType === "any",
+  );
+  const hasActiveRuleForSelectedMedia = useMemo(
+    () =>
+      Boolean(selectedMediaId) &&
+      rules.some(
+        (rule) => rule.active && (!rule.mediaId || rule.mediaId === selectedMediaId),
+      ),
+    [rules, selectedMediaId],
   );
   const matchedRule = useMemo(
     () => findMatchingRule(sampleComment, rules, selectedMedia?.id),
@@ -396,17 +412,16 @@ function App({ currentView }: AppProps) {
       return;
     }
 
+    await syncCommentsForMedia(selectedMedia.id);
+  }
+
+  async function syncCommentsForMedia(mediaId: string, silent = false) {
     try {
-      const result = await apiRequest<{
-        checked: number;
-        acted: number;
-        failed?: number;
-        errors?: string[];
-      }>(
+      const result = await apiRequest<CommentSyncResponse>(
         "/api/instagram/comments/sync",
         {
           method: "POST",
-          body: JSON.stringify({ mediaId: selectedMedia.id }),
+          body: JSON.stringify({ mediaId }),
         },
       );
       await loadDashboard();
@@ -423,15 +438,19 @@ function App({ currentView }: AppProps) {
             : "",
         );
       } else {
-        setNotice(
-          result.acted > 0
-            ? `Checked ${result.checked} comments and sent ${result.acted}.`
-            : `Checked ${result.checked} comments. No new matching comments found.`,
-        );
+        if (!silent || result.acted > 0) {
+          setNotice(
+            result.acted > 0
+              ? `Checked ${result.checked} comments and sent ${result.acted}.`
+              : `Checked ${result.checked} comments. No new matching comments found.`,
+          );
+        }
         setError("");
       }
     } catch (syncError) {
-      setError(messageFromError(syncError));
+      if (!silent) {
+        setError(messageFromError(syncError));
+      }
     }
   }
 
@@ -509,6 +528,38 @@ function App({ currentView }: AppProps) {
   }[currentView];
   const isEditingRule = Boolean(selectedRule);
   const connectionReady = Boolean(status?.connected);
+
+  useEffect(() => {
+    if (
+      !connectionReady ||
+      currentView !== "dashboard" ||
+      !selectedMediaId ||
+      !hasActiveRuleForSelectedMedia
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    async function runAutoSync() {
+      if (autoSyncInFlight.current || cancelled) {
+        return;
+      }
+
+      autoSyncInFlight.current = true;
+      try {
+        await syncCommentsForMedia(selectedMediaId, true);
+      } finally {
+        autoSyncInFlight.current = false;
+      }
+    }
+
+    void runAutoSync();
+    const intervalId = window.setInterval(() => void runAutoSync(), 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [connectionReady, currentView, hasActiveRuleForSelectedMedia, selectedMediaId]);
 
   useEffect(() => {
     if (!statusLoaded || connectionReady) {
