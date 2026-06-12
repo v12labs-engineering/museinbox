@@ -25,6 +25,7 @@ export type ActivityStatus =
 
 export type Activity = {
   id: string;
+  externalId?: string;
   comment: string;
   matchedRuleName: string;
   dm: string;
@@ -34,6 +35,7 @@ export type Activity = {
     | "local_preview"
     | "instagram_webhook"
     | "instagram_comment"
+    | "instagram_comment_sync"
     | "instagram_mention"
     | "instagram_message";
   error?: string;
@@ -70,7 +72,7 @@ export function findMatchingRule(comment: string, rules: Rule[], mediaId?: strin
       return false;
     }
 
-    return !rule.mediaId || !mediaId || rule.mediaId === mediaId;
+    return !rule.mediaId || rule.mediaId === mediaId;
   });
   const keywordMatch = activeRules.find((rule) => {
     if (rule.triggerType !== "keyword") {

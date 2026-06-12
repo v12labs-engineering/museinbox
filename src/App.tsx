@@ -326,6 +326,31 @@ function App({ currentView }: AppProps) {
     }
   }
 
+  async function syncSelectedComments() {
+    if (!selectedMedia) {
+      return;
+    }
+
+    try {
+      const result = await apiRequest<{ checked: number; acted: number }>(
+        "/api/instagram/comments/sync",
+        {
+          method: "POST",
+          body: JSON.stringify({ mediaId: selectedMedia.id }),
+        },
+      );
+      await loadDashboard();
+      setNotice(
+        result.acted > 0
+          ? `Checked ${result.checked} comments and handled ${result.acted}.`
+          : `Checked ${result.checked} comments. No new matching comments found.`,
+      );
+      setError("");
+    } catch (syncError) {
+      setError(messageFromError(syncError));
+    }
+  }
+
   async function disconnectInstagram() {
     try {
       await apiRequest("/api/auth/instagram/disconnect", { method: "POST" });
@@ -580,6 +605,14 @@ function App({ currentView }: AppProps) {
                     <button className="primary-action" type="button" onClick={createRule}>
                       <Plus size={18} aria-hidden="true" />
                       New automation
+                    </button>
+                    <button
+                      className="secondary-action"
+                      type="button"
+                      onClick={syncSelectedComments}
+                    >
+                      <RefreshCw size={17} aria-hidden="true" />
+                      Check comments
                     </button>
                     {selectedMedia.permalink ? (
                       <a

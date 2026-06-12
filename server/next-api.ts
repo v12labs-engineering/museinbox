@@ -23,6 +23,7 @@ import {
 type DataFile = {
   rules: Rule[];
   activity: Activity[];
+  processedCommentIds?: string[];
   integration?: InstagramIntegration;
 };
 
@@ -63,6 +64,15 @@ type InstagramMediaItem = {
   timestamp?: string;
   commentsCount?: number;
   likeCount?: number;
+};
+
+type InstagramCommentItem = {
+  id: string;
+  text: string;
+  timestamp?: string;
+  username?: string;
+  mediaId?: string;
+  parentId?: string;
 };
 
 const dataDirectory = path.resolve(
@@ -134,6 +144,10 @@ export async function handleApiRequest(request: Request) {
 
     if (request.method === "GET" && pathname === "/api/instagram/media") {
       return handleInstagramMedia(request);
+    }
+
+    if (request.method === "POST" && pathname === "/api/instagram/comments/sync") {
+      return syncInstagramComments(request);
     }
 
     if (request.method === "GET" && pathname === "/api/auth/instagram/start") {
@@ -420,30 +434,7 @@ async function handleInstagramWebhook(request: Request) {
   for (const event of events) {
     const stateId = event.accountId ? accountStateId(event.accountId) : defaultStateId;
     const data = await readData(stateId);
-    const matchedRule = findMatchingRule(event.text, data.rules, event.mediaId);
-    const dm = matchedRule ? composeDm(matchedRule) : "";
-    const entry: Activity = {
-      id: randomUUID(),
-      comment: event.text || "(empty comment)",
-      matchedRuleName: matchedRule?.name ?? "No matching rule",
-      dm: dm || "No DM generated",
-      timestamp: new Date().toISOString(),
-      status: matchedRule ? "dry_run" : "no_match",
-      source:
-        event.kind === "comment"
-          ? "instagram_comment"
-          : event.kind === "mention"
-            ? "instagram_mention"
-            : "instagram_message",
-    };
-
-    if (matchedRule && dm) {
-      const sendResult = await sendWebhookReply(data, event.replyTarget, dm);
-      entry.status = sendResult.ok ? sendResult.status : "failed";
-      entry.error = sendResult.error;
-    }
-
-    data.activity = [entry, ...data.activity].slice(0, 50);
+    await processInstagramEvent(data, event);
     await writeData(data, stateId);
   }
 
@@ -487,11 +478,14 @@ async function sendPrivateReply(
     return { ok: false, error: "Connect Instagram first" };
   }
 
-  const apiUrl = `https://graph.facebook.com/${getGraphVersion()}/${encodeURIComponent(
+  const apiUrl = `https://graph.instagram.com/${getGraphVersion()}/${encodeURIComponent(
     commentId,
   )}/private_replies`;
   const body = new URLSearchParams({ message, access_token: accessToken });
-  const result = await fetch(apiUrl, { method: "POST", body });
+  const result = await fetch(apiUrl, {
+    method: "POST",
+    body,
+  });
 
   if (!result.ok) {
     return { ok: false, error: await result.text() };
@@ -524,7 +518,7 @@ async function sendInstagramMessage(
     access_token: accessToken,
   });
   const result = await fetch(
-    `https://graph.facebook.com/${getGraphVersion()}/me/messages`,
+    `https://graph.instagram.com/${getGraphVersion()}/me/messages`,
     {
       method: "POST",
       body,
@@ -536,6 +530,54 @@ async function sendInstagramMessage(
   }
 
   return { ok: true, status: "sent" as const };
+}
+
+async function processInstagramEvent(data: DataFile, event: InstagramWebhookEvent) {
+  if (
+    event.replyTarget.type === "comment" &&
+    data.processedCommentIds?.includes(event.replyTarget.commentId)
+  ) {
+    return;
+  }
+
+  const matchedRule = findMatchingRule(event.text, data.rules, event.mediaId);
+  const dm = matchedRule ? composeDm(matchedRule) : "";
+  const entry: Activity = {
+    id: randomUUID(),
+    externalId:
+      event.replyTarget.type === "comment"
+        ? event.replyTarget.commentId
+        : event.replyTarget.type === "message"
+          ? event.replyTarget.senderId
+          : event.id,
+    comment: event.text || "(empty comment)",
+    matchedRuleName: matchedRule?.name ?? "No matching rule",
+    dm: dm || "No DM generated",
+    timestamp: new Date().toISOString(),
+    status: matchedRule ? "dry_run" : "no_match",
+    source:
+      event.kind === "comment"
+        ? "instagram_comment"
+        : event.kind === "mention"
+          ? "instagram_mention"
+          : "instagram_message",
+  };
+
+  if (matchedRule && dm) {
+    const sendResult = await sendWebhookReply(data, event.replyTarget, dm);
+    entry.status = sendResult.ok ? sendResult.status : "failed";
+    entry.error = sendResult.error;
+
+    if (sendResult.ok && event.replyTarget.type === "comment") {
+      const commentId = event.replyTarget.commentId;
+      data.processedCommentIds = [
+        commentId,
+        ...(data.processedCommentIds ?? []).filter((id) => id !== commentId),
+      ].slice(0, 1000);
+    }
+  }
+
+  data.activity = [entry, ...data.activity].slice(0, 50);
 }
 
 function extractInstagramWebhookEvents(body: unknown): InstagramWebhookEvent[] {
@@ -692,6 +734,59 @@ async function handleInstagramMedia(request: Request) {
   return json(200, media);
 }
 
+async function syncInstagramComments(request: Request) {
+  const data = await readData(getRequestStateId(request));
+  const accessToken = getAccessToken(data);
+  if (!accessToken) {
+    return json(401, { error: "Connect Instagram first" });
+  }
+
+  const payload = await readJson<{ mediaId?: string }>(request);
+  const mediaIds = [
+    payload.mediaId,
+    ...data.rules.map((rule) => rule.mediaId).filter(Boolean),
+  ].filter((value, index, values): value is string => {
+    return typeof value === "string" && value.length > 0 && values.indexOf(value) === index;
+  });
+
+  if (mediaIds.length === 0) {
+    return json(400, { error: "Pick a post or create a post-specific automation first" });
+  }
+
+  let checked = 0;
+  let acted = 0;
+  for (const mediaId of mediaIds) {
+    const comments = await fetchInstagramComments(accessToken, mediaId);
+    for (const comment of comments) {
+      checked += 1;
+      if (comment.parentId || data.processedCommentIds?.includes(comment.id)) {
+        continue;
+      }
+
+      const matchingRule = findMatchingRule(comment.text, data.rules, mediaId);
+      if (!matchingRule || !commentIsEligibleForRule(comment, matchingRule)) {
+        continue;
+      }
+
+      await processInstagramEvent(data, {
+        id: comment.id,
+        kind: "comment",
+        text: comment.text,
+        mediaId,
+        replyTarget: { type: "comment", commentId: comment.id },
+      });
+      const latestEntry = data.activity[0];
+      if (latestEntry) {
+        latestEntry.source = "instagram_comment_sync";
+      }
+      acted += 1;
+    }
+  }
+
+  await writeData(data, getRequestStateId(request));
+  return json(200, { ok: true, checked, acted });
+}
+
 async function fetchInstagramMedia(accessToken: string): Promise<InstagramMediaItem[]> {
   const url = new URL(`https://graph.instagram.com/${getGraphVersion()}/me/media`);
   url.searchParams.set(
@@ -728,6 +823,46 @@ async function fetchInstagramMedia(accessToken: string): Promise<InstagramMediaI
     commentsCount: numberFrom(item.comments_count),
     likeCount: numberFrom(item.like_count),
   }));
+}
+
+async function fetchInstagramComments(
+  accessToken: string,
+  mediaId: string,
+): Promise<InstagramCommentItem[]> {
+  const url = new URL(
+    `https://graph.instagram.com/${getGraphVersion()}/${encodeURIComponent(mediaId)}/comments`,
+  );
+  url.searchParams.set("fields", "id,text,timestamp,username,parent_id");
+  url.searchParams.set("limit", "50");
+  url.searchParams.set("access_token", accessToken);
+
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Instagram comments fetch failed: ${await response.text()}`);
+  }
+
+  const payload = (await response.json()) as { data?: unknown[] };
+  return (payload.data ?? []).filter(isRecord).map((item) => ({
+    id: stringFrom(item.id),
+    text: stringFrom(item.text),
+    timestamp: stringFrom(item.timestamp) || undefined,
+    username: stringFrom(item.username) || undefined,
+    parentId: stringFrom(item.parent_id) || undefined,
+  }));
+}
+
+function commentIsEligibleForRule(comment: InstagramCommentItem, rule: Rule) {
+  if (!comment.timestamp) {
+    return true;
+  }
+
+  const commentTime = Date.parse(comment.timestamp);
+  const ruleTime = Date.parse(rule.createdAt);
+  if (!Number.isFinite(commentTime) || !Number.isFinite(ruleTime)) {
+    return true;
+  }
+
+  return commentTime >= ruleTime - 2 * 60 * 1000;
 }
 
 function getGraphVersion() {
@@ -988,6 +1123,9 @@ function normalizeData(data: Partial<DataFile>): DataFile {
   return {
     rules: Array.isArray(data.rules) ? data.rules : starterRules,
     activity: Array.isArray(data.activity) ? data.activity : [],
+    processedCommentIds: Array.isArray(data.processedCommentIds)
+      ? data.processedCommentIds.filter((id): id is string => typeof id === "string")
+      : [],
     integration: isRecord(data.integration) ? data.integration : {},
   };
 }
