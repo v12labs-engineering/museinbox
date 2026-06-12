@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useId, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -96,33 +96,28 @@ function MuseInboxLogo() {
 }
 
 function InstagramButtonIcon() {
-  const gradientId = useId().replace(/:/g, "");
-
   return (
     <span className="instagram-button-icon" aria-hidden="true">
       <svg viewBox="0 0 24 24" role="img">
-        <defs>
-          <linearGradient id={gradientId} x1="3" y1="21" x2="21" y2="3">
-            <stop offset="0" stopColor="#FEDA75" />
-            <stop offset="0.32" stopColor="#FA7E1E" />
-            <stop offset="0.56" stopColor="#D62976" />
-            <stop offset="0.78" stopColor="#962FBF" />
-            <stop offset="1" stopColor="#4F5BD5" />
-          </linearGradient>
-        </defs>
-        <rect width="24" height="24" rx="6" fill={`url(#${gradientId})`} />
         <rect
-          x="6.4"
-          y="6.4"
-          width="11.2"
-          height="11.2"
-          rx="3.4"
+          x="4.25"
+          y="4.25"
+          width="15.5"
+          height="15.5"
+          rx="4.6"
           fill="none"
-          stroke="white"
-          strokeWidth="1.8"
+          stroke="currentColor"
+          strokeWidth="2"
         />
-        <circle cx="12" cy="12" r="3" fill="none" stroke="white" strokeWidth="1.8" />
-        <circle cx="16.1" cy="7.9" r="1.1" fill="white" />
+        <circle
+          cx="12"
+          cy="12"
+          r="3.7"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        />
+        <circle cx="16.85" cy="7.15" r="1.15" fill="currentColor" />
       </svg>
     </span>
   );
