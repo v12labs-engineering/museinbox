@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useId, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -90,6 +90,39 @@ function MuseInboxLogo() {
         <path className="logo-line" d="M18.5 21.5h14" />
         <path className="logo-line" d="M18.5 27.5h8.5" />
         <circle className="logo-signal" cx="34.5" cy="14" r="4.25" />
+      </svg>
+    </span>
+  );
+}
+
+function InstagramButtonIcon() {
+  const gradientId = useId().replace(/:/g, "");
+
+  return (
+    <span className="instagram-button-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" role="img">
+        <defs>
+          <linearGradient id={gradientId} x1="3" y1="21" x2="21" y2="3">
+            <stop offset="0" stopColor="#FEDA75" />
+            <stop offset="0.32" stopColor="#FA7E1E" />
+            <stop offset="0.56" stopColor="#D62976" />
+            <stop offset="0.78" stopColor="#962FBF" />
+            <stop offset="1" stopColor="#4F5BD5" />
+          </linearGradient>
+        </defs>
+        <rect width="24" height="24" rx="6" fill={`url(#${gradientId})`} />
+        <rect
+          x="6.4"
+          y="6.4"
+          width="11.2"
+          height="11.2"
+          rx="3.4"
+          fill="none"
+          stroke="white"
+          strokeWidth="1.8"
+        />
+        <circle cx="12" cy="12" r="3" fill="none" stroke="white" strokeWidth="1.8" />
+        <circle cx="16.1" cy="7.9" r="1.1" fill="white" />
       </svg>
     </span>
   );
@@ -441,7 +474,7 @@ function App({ currentView }: AppProps) {
               </>
             ) : (
               <a className="primary-action link-action" href="/api/auth/instagram/start">
-                <Send size={18} aria-hidden="true" />
+                <InstagramButtonIcon />
                 Connect Instagram
               </a>
             )}
@@ -836,7 +869,7 @@ function App({ currentView }: AppProps) {
               </button>
             ) : (
               <a className="primary-action link-action" href="/api/auth/instagram/start">
-                <Send size={18} aria-hidden="true" />
+                <InstagramButtonIcon />
                 Connect Instagram
               </a>
             )}
