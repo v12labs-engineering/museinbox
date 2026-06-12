@@ -349,6 +349,161 @@ h3 {
   min-width: max-content;
 }
 
+.login-page {
+  display: grid;
+  min-height: 100vh;
+  padding: 24px;
+  background:
+    linear-gradient(135deg, oklch(99% 0.006 160), oklch(94% 0.016 248));
+}
+
+.login-shell {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.92fr) minmax(360px, 1.08fr);
+  gap: 28px;
+  align-items: stretch;
+  width: min(1120px, 100%);
+  margin: auto;
+}
+
+.login-panel,
+.login-preview {
+  min-width: 0;
+  border: 1px solid oklch(88% 0.015 248);
+  border-radius: 8px;
+  background: oklch(99% 0.004 248);
+  box-shadow: 0 24px 60px oklch(30% 0.03 248 / 10%);
+}
+
+.login-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 34px;
+}
+
+.login-brand {
+  margin-bottom: 44px;
+}
+
+.login-copy h1 {
+  max-width: 620px;
+  margin: 0;
+  color: oklch(18% 0.026 248);
+  font-size: clamp(2rem, 4vw, 4rem);
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.login-copy p:not(.eyebrow) {
+  max-width: 560px;
+  margin: 18px 0 0;
+  color: oklch(42% 0.032 248);
+  font-size: 1.03rem;
+  line-height: 1.55;
+}
+
+.login-action {
+  align-self: flex-start;
+  min-height: 48px;
+  margin-top: 30px;
+  padding: 0 18px;
+  font-size: 1rem;
+}
+
+.login-trust {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+  color: oklch(40% 0.033 248);
+  font-size: 0.86rem;
+  font-weight: 780;
+}
+
+.login-trust span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border: 1px solid oklch(88% 0.015 248);
+  border-radius: 8px;
+  background: oklch(97% 0.008 248);
+}
+
+.login-preview {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 34px;
+  background:
+    linear-gradient(180deg, oklch(98% 0.012 160), oklch(95% 0.014 248));
+}
+
+.preview-phone {
+  display: grid;
+  gap: 14px;
+  width: min(360px, 100%);
+}
+
+.preview-post,
+.preview-comment,
+.preview-rule {
+  border: 1px solid oklch(86% 0.016 248);
+  border-radius: 8px;
+  background: oklch(99% 0.004 248);
+  box-shadow: 0 14px 32px oklch(30% 0.03 248 / 8%);
+}
+
+.preview-post {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.preview-post div {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, oklch(81% 0.12 75), oklch(58% 0.11 172)),
+    oklch(92% 0.025 248);
+}
+
+.preview-post span,
+.preview-comment span,
+.preview-rule span {
+  color: oklch(38% 0.032 248);
+  font-weight: 780;
+  line-height: 1.35;
+}
+
+.preview-comment,
+.preview-rule {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 13px;
+}
+
+.preview-comment {
+  margin-left: 28px;
+}
+
+.preview-rule {
+  border-color: oklch(76% 0.08 160);
+  background: oklch(96% 0.032 160);
+}
+
+.preview-rule strong {
+  display: block;
+  color: oklch(24% 0.08 160);
+}
+
+.preview-rule span {
+  display: block;
+  margin-top: 2px;
+}
+
 .success,
 .warning {
   display: flex;
@@ -1100,6 +1255,23 @@ textarea:focus {
 }
 
 @media (max-width: 860px) {
+  .login-page {
+    padding: 16px;
+  }
+
+  .login-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .login-panel,
+  .login-preview {
+    padding: 22px;
+  }
+
+  .login-brand {
+    margin-bottom: 30px;
+  }
+
   .app-frame {
     grid-template-columns: 1fr;
   }
@@ -1154,6 +1326,18 @@ textarea:focus {
 }
 
 @media (max-width: 560px) {
+  .login-copy h1 {
+    font-size: 2rem;
+  }
+
+  .login-action {
+    width: 100%;
+  }
+
+  .login-trust span {
+    width: 100%;
+  }
+
   .app-sidebar button {
     width: 40px;
     padding: 0;

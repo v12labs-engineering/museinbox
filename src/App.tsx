@@ -78,7 +78,7 @@ function formatTime(value: string) {
   }).format(new Date(value));
 }
 
-function MuseInboxLogo() {
+export function MuseInboxLogo() {
   return (
     <span className="brand-logo" aria-hidden="true">
       <svg viewBox="0 0 48 48" role="img">
@@ -95,7 +95,7 @@ function MuseInboxLogo() {
   );
 }
 
-function InstagramButtonIcon() {
+export function InstagramButtonIcon() {
   return (
     <span className="instagram-button-icon" aria-hidden="true">
       <svg viewBox="0 0 24 24" role="img">
@@ -468,10 +468,10 @@ function App({ currentView }: AppProps) {
                 </button>
               </>
             ) : (
-              <a className="primary-action link-action" href="/api/auth/instagram/start">
+              <Link className="primary-action link-action" href="/login">
                 <InstagramButtonIcon />
                 Continue with Instagram
-              </a>
+              </Link>
             )}
           </div>
         </header>
@@ -866,10 +866,10 @@ function App({ currentView }: AppProps) {
                 Disconnect
               </button>
             ) : (
-              <a className="primary-action link-action" href="/api/auth/instagram/start">
+              <Link className="primary-action link-action" href="/login">
                 <InstagramButtonIcon />
                 Continue with Instagram
-              </a>
+              </Link>
             )}
           </div>
 
