@@ -519,15 +519,6 @@ function App({ currentView }: AppProps) {
                       <RefreshCw className="size-4" />
                       Refresh
                     </Button>
-                    <Button
-                      className="hidden md:inline-flex"
-                      type="button"
-                      variant="ghost"
-                      onClick={disconnectInstagram}
-                    >
-                      <Unplug className="size-4" />
-                      Disconnect
-                    </Button>
                   </>
                 ) : (
                   <Button
@@ -1369,77 +1360,164 @@ function SettingsView({
   onDisconnect: () => void;
   status: InstagramStatus | null;
 }) {
-  const items = [
+  const readiness = [
     {
-      label: "Instagram",
-      value: connected ? "Connected" : "Not connected",
-      text: status?.instagramUserId
-        ? `User ID: ${status.instagramUserId}`
-        : "Connect a Business or Creator account to fetch content and send replies.",
+      label: "App ID",
+      ready: Boolean(status?.hasAppId),
     },
     {
-      label: "Webhook",
-      value: status?.webhookPath ?? "Not configured",
-      text: status?.hasVerifyToken
-        ? "Verify token is configured."
-        : "Verify token is missing.",
+      label: "App secret",
+      ready: Boolean(status?.hasAppSecret),
     },
     {
-      label: "Reply mode",
-      value: status?.dryRun ? "Dry run" : "Live replies",
-      text: status?.dryRun
-        ? "Matching comments are logged without sending DMs."
-        : "Matching comments can trigger real Instagram replies.",
-    },
-    {
-      label: "Token",
-      value: status?.tokenSource ?? "None",
-      text: status?.expiresAt
-        ? `Expires ${formatTime(status.expiresAt)}.`
-        : "No token expiry available.",
+      label: "Verify token",
+      ready: Boolean(status?.hasVerifyToken),
     },
   ];
+  const permissions = status?.permissions?.length ? status.permissions : [];
 
   return (
-    <Card className="max-w-5xl border-border/80 bg-card/92 shadow-sm">
-      <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
-        <div>
+    <div className="grid max-w-5xl gap-4">
+      <Card className="border-border/80 bg-card/92 shadow-sm">
+        <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
+          <div className="min-w-0">
+            <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
+              Account
+            </CardDescription>
+            <CardTitle>Instagram connection</CardTitle>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Manage the Instagram account MuseInbox uses for posts, comments,
+              and direct-message replies.
+            </p>
+          </div>
+          <Badge
+            className={cn(
+              connected
+                ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100"
+                : "bg-amber-100 text-amber-800 hover:bg-amber-100",
+            )}
+          >
+            {connected ? "Connected" : "Not connected"}
+          </Badge>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="rounded-xl border border-border bg-background p-4">
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-primary">
+              Instagram account
+            </p>
+            <h3 className="mt-2 text-lg font-black">
+              {status?.instagramUserId
+                ? `User ID: ${status.instagramUserId}`
+                : "No account connected"}
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {connected
+                ? `Using Instagram Graph ${status?.graphVersion ?? "API"}.`
+                : "Connect a Business or Creator account to fetch content and create automations."}
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row">
+            {connected ? (
+              <Button type="button" variant="destructive" onClick={onDisconnect}>
+                <Unplug className="size-4" />
+                Disconnect Instagram
+              </Button>
+            ) : (
+              <Button asChild>
+                <Link href="/login">
+                  <InstagramButtonIcon />
+                  Continue with Instagram
+                </Link>
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="border-border/80 bg-card/92 shadow-sm">
+          <CardHeader>
+            <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
+              Replies
+            </CardDescription>
+            <CardTitle>Reply behavior</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-xl border border-border bg-background p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-black">
+                    {status?.dryRun ? "Dry run" : "Live replies"}
+                  </h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {status?.dryRun
+                      ? "Matches are logged without sending Instagram DMs."
+                      : "Matching comments can trigger real Instagram replies."}
+                  </p>
+                </div>
+                <Badge variant={status?.dryRun ? "secondary" : "default"}>
+                  {status?.dryRun ? "Testing" : "Live"}
+                </Badge>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/80 bg-card/92 shadow-sm">
+          <CardHeader>
+            <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
+              Setup
+            </CardDescription>
+            <CardTitle>App readiness</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-2">
+            {readiness.map((item) => (
+              <div
+                className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background p-3"
+                key={item.label}
+              >
+                <span className="font-bold">{item.label}</span>
+                <Badge
+                  className={
+                    item.ready
+                      ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100"
+                      : ""
+                  }
+                  variant={item.ready ? "default" : "secondary"}
+                >
+                  {item.ready ? "Ready" : "Missing"}
+                </Badge>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="border-border/80 bg-card/92 shadow-sm">
+        <CardHeader>
           <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
-            Connection
+            Access
           </CardDescription>
-          <CardTitle>Instagram account and webhooks</CardTitle>
-        </div>
-        {connected ? (
-          <Button type="button" variant="destructive" onClick={onDisconnect}>
-            <Unplug className="size-4" />
-            Disconnect
-          </Button>
-        ) : (
-          <Button asChild>
-            <Link href="/login">
-              <InstagramButtonIcon />
-              Continue with Instagram
-            </Link>
-          </Button>
-        )}
-      </CardHeader>
-      <CardContent>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {items.map((item) => (
-            <article
-              className="min-w-0 rounded-xl border border-border bg-background p-4"
-              key={item.label}
-            >
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-primary">
-                {item.label}
-              </p>
-              <h3 className="mt-2 truncate text-lg font-black">{item.value}</h3>
-              <p className="mt-1 text-sm text-muted-foreground">{item.text}</p>
-            </article>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+          <CardTitle>Instagram permissions</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {permissions.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {permissions.map((permission) => (
+                <Badge key={permission} variant="secondary">
+                  {permission}
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+              Permissions will appear here after Instagram is connected.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
