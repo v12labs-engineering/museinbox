@@ -609,7 +609,36 @@ async function sendPrivateReply(
   const accessToken = getInstagramAccessToken(data);
   const instagramUserId = getInstagramUserId(data);
   if (accessToken && instagramUserId) {
-    return sendInstagramPrivateReply(instagramUserId, commentId, message, accessToken);
+    const instagramResult = await sendInstagramPrivateReply(
+      instagramUserId,
+      commentId,
+      message,
+      accessToken,
+    );
+    if (instagramResult.ok) {
+      return instagramResult;
+    }
+
+    const pageId = getPageId(data);
+    const pageAccessToken = getPageAccessToken(data);
+    if (pageId && pageAccessToken) {
+      const pageResult = await sendPagePrivateReply(
+        pageId,
+        commentId,
+        message,
+        pageAccessToken,
+      );
+      if (pageResult.ok) {
+        return pageResult;
+      }
+
+      return {
+        ok: false,
+        error: joinSendErrors(instagramResult.error, pageResult.error),
+      };
+    }
+
+    return instagramResult;
   }
 
   return {
@@ -628,8 +657,43 @@ async function sendInstagramPrivateReply(
   | { ok: true; status: "sent"; error?: undefined }
   | { ok: false; error: string; status?: undefined }
 > {
+  const directResult = await postInstagramPrivateReply(
+    instagramUserId,
+    commentId,
+    message,
+    accessToken,
+  );
+  if (directResult.ok || !shouldRetryPrivateReplyWithMe(directResult.error)) {
+    return directResult;
+  }
+
+  const meResult = await postInstagramPrivateReply(
+    "me",
+    commentId,
+    message,
+    accessToken,
+  );
+  if (meResult.ok) {
+    return meResult;
+  }
+
+  return {
+    ok: false,
+    error: joinSendErrors(directResult.error, meResult.error),
+  };
+}
+
+async function postInstagramPrivateReply(
+  targetId: string,
+  commentId: string,
+  message: string,
+  accessToken: string,
+): Promise<
+  | { ok: true; status: "sent"; error?: undefined }
+  | { ok: false; error: string; status?: undefined }
+> {
   const result = await fetch(
-    `https://graph.instagram.com/${getGraphVersion()}/${encodeURIComponent(instagramUserId)}/messages`,
+    `https://graph.instagram.com/${getGraphVersion()}/${encodeURIComponent(targetId)}/messages`,
     {
       method: "POST",
       headers: {
@@ -644,7 +708,44 @@ async function sendInstagramPrivateReply(
   );
 
   if (!result.ok) {
-    return { ok: false, error: await result.text() };
+    return {
+      ok: false,
+      error: labelMetaError(`Instagram ${targetId}/messages`, await result.text()),
+    };
+  }
+
+  return { ok: true, status: "sent" as const };
+}
+
+async function sendPagePrivateReply(
+  pageId: string,
+  commentId: string,
+  message: string,
+  accessToken: string,
+): Promise<
+  | { ok: true; status: "sent"; error?: undefined }
+  | { ok: false; error: string; status?: undefined }
+> {
+  const result = await fetch(
+    `https://graph.facebook.com/${getGraphVersion()}/${encodeURIComponent(pageId)}/messages`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        recipient: { comment_id: commentId },
+        message: { text: message },
+      }),
+    },
+  );
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: labelMetaError("Facebook Page messages", await result.text()),
+    };
   }
 
   return { ok: true, status: "sent" as const };
@@ -1445,6 +1546,21 @@ function isExpiredMetaTokenError(message: string) {
     message.includes("code 190") ||
     /expired|failed to decrypt|invalid oauth access token/i.test(message)
   );
+}
+
+function shouldRetryPrivateReplyWithMe(message: string) {
+  return (
+    message.includes('"code":100') ||
+    /object with id .*does not exist|unsupported post request/i.test(message)
+  );
+}
+
+function labelMetaError(route: string, error: string) {
+  return `${route}: ${error}`;
+}
+
+function joinSendErrors(...errors: string[]) {
+  return errors.filter(Boolean).join("\n");
 }
 
 function redirect(url: string, cookies: string[] = []) {
