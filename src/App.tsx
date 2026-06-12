@@ -1480,9 +1480,9 @@ function SettingsView({
   const permissions = status?.permissions?.length ? status.permissions : [];
 
   return (
-    <div className="grid max-w-5xl gap-4">
-      <Card className="border-border/80 bg-card/92 shadow-sm">
-        <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
+    <div className="grid min-w-0 max-w-5xl gap-4">
+      <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92 shadow-sm">
+        <CardHeader className="flex flex-col items-start gap-3 space-y-0 sm:flex-row sm:justify-between">
           <div className="min-w-0">
             <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
               Account
@@ -1504,11 +1504,11 @@ function SettingsView({
           </Badge>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <div className="rounded-xl border border-border bg-background p-4">
+          <div className="min-w-0 rounded-xl border border-border bg-background p-4">
             <p className="text-xs font-black uppercase tracking-[0.16em] text-primary">
               Instagram account
             </p>
-            <h3 className="mt-2 text-lg font-black">
+            <h3 className="mt-2 break-words text-lg font-black">
               {status?.instagramUserId
                 ? `User ID: ${status.instagramUserId}`
                 : "No account connected"}
@@ -1522,7 +1522,7 @@ function SettingsView({
 
           <div
             className={cn(
-              "rounded-xl border p-4",
+              "min-w-0 overflow-hidden rounded-xl border p-4",
               status?.canSendPrivateReplies
                 ? "border-emerald-200 bg-emerald-50 text-emerald-950"
                 : "border-amber-200 bg-amber-50 text-amber-950",
@@ -1568,34 +1568,34 @@ function SettingsView({
           ) : null}
 
           {status?.webhookSubscriptionError ? (
-            <Alert className="border-amber-200 bg-amber-50 text-amber-950">
+            <Alert className="min-w-0 overflow-hidden border-amber-200 bg-amber-50 text-amber-950">
               <AlertTriangle className="size-4" />
               <AlertTitle>Webhook subscription needs attention</AlertTitle>
-              <AlertDescription className="break-words">
+              <AlertDescription className="min-w-0 whitespace-pre-wrap break-words text-sm">
                 {readableInstagramError(status.webhookSubscriptionError)}
               </AlertDescription>
             </Alert>
           ) : null}
 
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="grid min-w-0 gap-2 sm:grid-cols-2">
             {connected ? (
               <>
-                <Button asChild type="button" variant="outline">
+                <Button asChild className="min-w-0 justify-center" type="button" variant="outline">
                   <a href={status?.oauthStartPath ?? "/api/auth/instagram/start"}>
                     <InstagramButtonIcon />
-                    Reconnect Instagram
+                    <span className="truncate">Reconnect Instagram</span>
                   </a>
                 </Button>
-                <Button type="button" variant="destructive" onClick={onDisconnect}>
+                <Button className="min-w-0 justify-center" type="button" variant="destructive" onClick={onDisconnect}>
                   <Unplug className="size-4" />
-                  Disconnect Instagram
+                  <span className="truncate">Disconnect Instagram</span>
                 </Button>
               </>
             ) : (
-              <Button asChild>
+              <Button asChild className="min-w-0 justify-center">
                 <Link href="/login">
                   <InstagramButtonIcon />
-                  Connect Instagram
+                  <span className="truncate">Connect Instagram</span>
                 </Link>
               </Button>
             )}
@@ -1603,8 +1603,8 @@ function SettingsView({
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="border-border/80 bg-card/92 shadow-sm">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+        <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92 shadow-sm">
           <CardHeader>
             <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
               Replies
@@ -1612,9 +1612,9 @@ function SettingsView({
             <CardTitle>Reply behavior</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="rounded-xl border border-border bg-background p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
+            <div className="min-w-0 rounded-xl border border-border bg-background p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
                   <h3 className="font-black">
                     {status?.dryRun ? "Dry run" : "Live replies"}
                   </h3>
@@ -1632,7 +1632,7 @@ function SettingsView({
           </CardContent>
         </Card>
 
-        <Card className="border-border/80 bg-card/92 shadow-sm">
+        <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92 shadow-sm">
           <CardHeader>
             <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
               Setup

@@ -1200,6 +1200,7 @@ async function ensureInstagramWebhookSubscription(
     data.integration?.webhookSubscriptionCheckedAt ?? "",
   );
   if (
+    !data.integration?.webhookSubscriptionError &&
     Number.isFinite(lastCheckedAt) &&
     Date.now() - lastCheckedAt < 5 * 60 * 1000
   ) {
@@ -1207,12 +1208,6 @@ async function ensureInstagramWebhookSubscription(
   }
 
   const fields = "comments,messages";
-  const url = new URL(
-    `https://graph.instagram.com/${getGraphVersion()}/${encodeURIComponent(instagramUserId)}/subscribed_apps`,
-  );
-  url.searchParams.set("subscribed_fields", fields);
-  url.searchParams.set("access_token", accessToken);
-
   logDiagnostic("webhook_account_subscription_start", {
     diagnosticId,
     instagramUserId: safeId(instagramUserId),
@@ -1224,41 +1219,86 @@ async function ensureInstagramWebhookSubscription(
     webhookSubscriptionCheckedAt: new Date().toISOString(),
   };
 
+  const attempts = [
+    { label: "Instagram me/subscribed_apps", targetId: "me" },
+    { label: "Instagram ID subscribed_apps", targetId: instagramUserId },
+  ];
+  const errors: string[] = [];
+  for (const attempt of attempts) {
+    const result = await postInstagramWebhookSubscription(
+      attempt.targetId,
+      attempt.label,
+      fields,
+      accessToken,
+      diagnosticId,
+    );
+    if (result.ok) {
+      data.integration = {
+        ...data.integration,
+        webhookSubscribedAt: new Date().toISOString(),
+        webhookSubscriptionError:
+          result.success === false ? "Meta did not confirm subscription" : undefined,
+      };
+      return true;
+    }
+
+    errors.push(result.error);
+  }
+
+  data.integration = {
+    ...data.integration,
+    webhookSubscriptionError: joinSendErrors(...errors),
+  };
+  return true;
+}
+
+async function postInstagramWebhookSubscription(
+  targetId: string,
+  label: string,
+  fields: string,
+  accessToken: string,
+  diagnosticId: string,
+): Promise<{ ok: true; success?: boolean } | { ok: false; error: string }> {
+  const url = new URL(
+    `https://graph.instagram.com/${getGraphVersion()}/${encodeURIComponent(targetId)}/subscribed_apps`,
+  );
+  url.searchParams.set("subscribed_fields", fields);
+  url.searchParams.set("access_token", accessToken);
+
+  logDiagnostic("webhook_account_subscription_attempt", {
+    diagnosticId,
+    route: label,
+    targetId: safeId(targetId),
+    fields,
+  });
+
   const response = await fetch(url, { method: "POST" });
   if (!response.ok) {
     const error = await response.text();
-    data.integration = {
-      ...data.integration,
-      webhookSubscriptionError: labelMetaError(
-        "Instagram subscribed_apps",
-        error,
-      ),
-    };
     logDiagnostic("webhook_account_subscription_failed", {
       diagnosticId,
-      instagramUserId: safeId(instagramUserId),
+      route: label,
+      targetId: safeId(targetId),
       status: response.status,
       error: summarizeMetaError(error),
     });
-    return true;
+    return {
+      ok: false,
+      error: labelMetaError(label, error),
+    };
   }
 
   const payload = (await response.json().catch(() => ({}))) as {
     success?: boolean;
   };
-  data.integration = {
-    ...data.integration,
-    webhookSubscribedAt: new Date().toISOString(),
-    webhookSubscriptionError:
-      payload.success === false ? "Meta did not confirm subscription" : undefined,
-  };
   logDiagnostic("webhook_account_subscription_enabled", {
     diagnosticId,
-    instagramUserId: safeId(instagramUserId),
+    route: label,
+    targetId: safeId(targetId),
     fields,
     success: payload.success ?? true,
   });
-  return true;
+  return { ok: true, success: payload.success };
 }
 
 async function exchangeFacebookCodeForToken(code: string, redirectUri: string) {
