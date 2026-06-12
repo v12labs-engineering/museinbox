@@ -100,6 +100,13 @@ type SendReplyResult =
       attempts?: string[];
     };
 
+type CommentSyncResult = {
+  checked: number;
+  acted: number;
+  failed: number;
+  errors: string[];
+};
+
 const dataDirectory = path.resolve(
   process.env.MUSEINBOX_DATA_DIR ??
     (process.env.VERCEL ? "/tmp/museinbox" : ".museinbox"),
@@ -182,6 +189,13 @@ export async function handleApiRequest(request: Request) {
 
     if (request.method === "POST" && pathname === "/api/instagram/comments/sync") {
       return syncInstagramComments(request);
+    }
+
+    if (
+      (request.method === "GET" || request.method === "POST") &&
+      pathname === "/api/instagram/comments/poll"
+    ) {
+      return pollInstagramComments(request);
     }
 
     if (request.method === "GET" && pathname === "/api/auth/instagram/start") {
@@ -1489,12 +1503,7 @@ async function syncInstagramComments(request: Request) {
   }
 
   const payload = await readJson<{ mediaId?: string }>(request);
-  const mediaIds = [
-    payload.mediaId,
-    ...data.rules.map((rule) => rule.mediaId).filter(Boolean),
-  ].filter((value, index, values): value is string => {
-    return typeof value === "string" && value.length > 0 && values.indexOf(value) === index;
-  });
+  const mediaIds = mediaIdsForCommentSync(data, payload.mediaId);
 
   if (mediaIds.length === 0) {
     logDiagnostic("comment_sync_no_media", {
@@ -1505,11 +1514,154 @@ async function syncInstagramComments(request: Request) {
     return json(400, { error: "Pick a post or create a post-specific automation first" });
   }
 
+  try {
+    const result = await syncInstagramCommentsForData({
+      data,
+      readContext,
+      mediaIds,
+      diagnosticId,
+      stateId,
+      requestedMediaId: payload.mediaId,
+      activitySource: "instagram_comment_sync",
+    });
+    await writeData(data, stateId);
+    return json(200, {
+      ok: true,
+      diagnosticId,
+      checked: result.checked,
+      acted: result.acted,
+      failed: result.failed,
+      errors: [...new Set(result.errors)].slice(0, 3),
+    });
+  } catch (error) {
+    const message = messageFromUnknown(error);
+    const status = isExpiredMetaTokenError(message) ? 401 : 502;
+    return json(status, {
+      error: isExpiredMetaTokenError(message)
+        ? "Instagram connection expired. Reconnect Instagram, then check comments again."
+        : message,
+    });
+  }
+}
+
+async function pollInstagramComments(request: Request) {
+  if (!isCronRequestAuthorized(request)) {
+    return json(401, { error: "Unauthorized" });
+  }
+
+  const diagnosticId = createDiagnosticId("poll");
+  const states = await readAutomationStatesForPolling();
+  const totals: CommentSyncResult & { states: number; skipped: number } = {
+    checked: 0,
+    acted: 0,
+    failed: 0,
+    errors: [],
+    states: 0,
+    skipped: 0,
+  };
+
+  logDiagnostic("comment_poll_start", {
+    diagnosticId,
+    states: states.length,
+  });
+
+  for (const state of states) {
+    const { stateId, data } = state;
+    const readContext = getInstagramReadContext(data);
+    const mediaIds = mediaIdsForCommentSync(data);
+    if (!readContext || mediaIds.length === 0) {
+      totals.skipped += 1;
+      logDiagnostic("comment_poll_state_skipped", {
+        diagnosticId,
+        stateId: safeId(stateId),
+        hasConnection: Boolean(readContext),
+        mediaIds: mediaIds.length,
+      });
+      continue;
+    }
+
+    const subscriptionChanged = await ensureInstagramWebhookSubscription(
+      data,
+      diagnosticId,
+    );
+    const aliasChanged = await discoverInstagramWebhookAccountAliases(
+      data,
+      diagnosticId,
+    );
+
+    try {
+      const result = await syncInstagramCommentsForData({
+        data,
+        readContext,
+        mediaIds,
+        diagnosticId,
+        stateId,
+        activitySource: "instagram_comment_poll",
+      });
+      totals.checked += result.checked;
+      totals.acted += result.acted;
+      totals.failed += result.failed;
+      totals.errors.push(...result.errors);
+      totals.states += 1;
+      await writeData(data, stateId);
+    } catch (error) {
+      totals.failed += 1;
+      totals.errors.push(messageFromUnknown(error));
+      if (subscriptionChanged || aliasChanged) {
+        await writeData(data, stateId);
+      }
+      logDiagnostic("comment_poll_state_failed", {
+        diagnosticId,
+        stateId: safeId(stateId),
+        error: summarizeMetaError(messageFromUnknown(error)),
+      });
+    }
+  }
+
+  logDiagnostic("comment_poll_finished", {
+    diagnosticId,
+    checked: totals.checked,
+    acted: totals.acted,
+    failed: totals.failed,
+    states: totals.states,
+    skipped: totals.skipped,
+    errors: totals.errors.map(summarizeMetaError).slice(0, 5),
+  });
+
+  return json(200, {
+    ok: true,
+    diagnosticId,
+    checked: totals.checked,
+    acted: totals.acted,
+    failed: totals.failed,
+    states: totals.states,
+    skipped: totals.skipped,
+    errors: [...new Set(totals.errors)].slice(0, 5),
+  });
+}
+
+async function syncInstagramCommentsForData({
+  data,
+  readContext,
+  mediaIds,
+  diagnosticId,
+  stateId,
+  requestedMediaId,
+  activitySource,
+}: {
+  data: DataFile;
+  readContext: InstagramReadContext;
+  mediaIds: string[];
+  diagnosticId: string;
+  stateId: string;
+  requestedMediaId?: string;
+  activitySource: Activity["source"];
+}): Promise<CommentSyncResult> {
   logDiagnostic("comment_sync_start", {
     diagnosticId,
     stateId: safeId(stateId),
     mediaIds: mediaIds.map(safeId),
-    requestedMediaId: safeId(payload.mediaId),
+    requestedMediaId: safeId(requestedMediaId),
     graphHost: readContext.graphHost,
     instagramUserId: safeId(readContext.instagramUserId ?? getInstagramUserId(data)),
     hasInstagramAccess: Boolean(getInstagramAccessToken(data)),
@@ -1519,10 +1671,13 @@ async function syncInstagramComments(request: Request) {
     activeRules: data.rules.filter((rule) => rule.active).length,
   });
 
-  let checked = 0;
-  let acted = 0;
-  let failed = 0;
-  const errors: string[] = [];
+  const result: CommentSyncResult = {
+    checked: 0,
+    acted: 0,
+    failed: 0,
+    errors: [],
+  };
+
   for (const mediaId of mediaIds) {
     let comments: InstagramCommentItem[];
     try {
@@ -1534,22 +1689,16 @@ async function syncInstagramComments(request: Request) {
       });
     } catch (error) {
       const message = messageFromUnknown(error);
-      const status = isExpiredMetaTokenError(message) ? 401 : 502;
       logDiagnostic("comment_sync_comments_fetch_failed", {
         diagnosticId,
         mediaId: safeId(mediaId),
-        status,
         error: summarizeMetaError(message),
       });
-      return json(status, {
-        error: isExpiredMetaTokenError(message)
-          ? "Instagram connection expired. Reconnect Instagram, then check comments again."
-          : message,
-      });
+      throw error;
     }
 
     for (const comment of comments) {
-      checked += 1;
+      result.checked += 1;
       if (comment.parentId || data.processedCommentIds?.includes(comment.id)) {
         logDiagnostic("comment_sync_comment_skipped", {
           diagnosticId,
@@ -1589,36 +1738,28 @@ async function syncInstagramComments(request: Request) {
       }, diagnosticId);
       const latestEntry = data.activity[0];
       if (latestEntry) {
-        latestEntry.source = "instagram_comment_sync";
+        latestEntry.source = activitySource;
         if (latestEntry.status === "failed") {
-          failed += 1;
+          result.failed += 1;
           if (latestEntry.error) {
-            errors.push(latestEntry.error);
+            result.errors.push(latestEntry.error);
           }
           continue;
         }
       }
-      acted += 1;
+      result.acted += 1;
     }
   }
 
-  await writeData(data, stateId);
   logDiagnostic("comment_sync_finished", {
     diagnosticId,
     stateId: safeId(stateId),
-    checked,
-    acted,
-    failed,
-    errors: errors.map(summarizeMetaError),
+    checked: result.checked,
+    acted: result.acted,
+    failed: result.failed,
+    errors: result.errors.map(summarizeMetaError),
   });
-  return json(200, {
-    ok: true,
-    diagnosticId,
-    checked,
-    acted,
-    failed,
-    errors: [...new Set(errors)].slice(0, 3),
-  });
+  return result;
 }
 
 type InstagramReadContext = {
@@ -2004,6 +2145,74 @@ function updateWebhookAccountAliases(
     aliases: aliases.map(safeId),
   });
   return true;
+}
+
+function mediaIdsForCommentSync(data: DataFile, requestedMediaId?: string) {
+  return [
+    requestedMediaId,
+    ...data.rules.map((rule) => rule.mediaId).filter(Boolean),
+  ].filter((value, index, values): value is string => {
+    return typeof value === "string" && value.length > 0 && values.indexOf(value) === index;
+  });
+}
+
+function isCronRequestAuthorized(request: Request) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) {
+    return true;
+  }
+
+  return request.headers.get("authorization") === `Bearer ${secret}`;
+}
+
+async function readAutomationStatesForPolling() {
+  if (!hasSupabaseConfig()) {
+    return [{ stateId: defaultStateId, data: await readData(defaultStateId) }];
+  }
+
+  const rows = await readSupabaseStateRowsForPolling();
+  return rows
+    .map((row) => {
+      if (!row.stateId || !isRecord(row.data)) {
+        return null;
+      }
+
+      const data = normalizeData(decryptData(row.data));
+      if (!isPollableAutomationState(data)) {
+        return null;
+      }
+
+      return { stateId: row.stateId, data };
+    })
+    .filter((row): row is { stateId: string; data: DataFile } => Boolean(row));
+}
+
+async function readSupabaseStateRowsForPolling() {
+  const url = supabaseRestUrl();
+  url.searchParams.set("select", "id,data");
+  url.searchParams.set("order", "updated_at.desc");
+  url.searchParams.set("limit", "100");
+
+  const response = await fetch(url, {
+    headers: supabaseHeaders(),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`Supabase polling state lookup failed: ${await response.text()}`);
+  }
+
+  const rows = (await response.json()) as Array<{ id?: unknown; data?: unknown }>;
+  return rows.map((row) => ({
+    stateId: stringFrom(row.id),
+    data: row.data,
+  }));
+}
+
+function isPollableAutomationState(data: DataFile) {
+  return Boolean(
+    getInstagramReadContext(data) &&
+      data.rules.some((rule) => rule.active && rule.mediaId),
+  );
 }
 
 function readSignedCookie<T>(request: Request, name: string): T | null {
