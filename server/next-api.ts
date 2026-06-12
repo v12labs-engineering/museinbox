@@ -39,6 +39,9 @@ type InstagramIntegration = {
   facebookUserId?: string;
   userId?: string;
   permissions?: string[];
+  webhookSubscribedAt?: string;
+  webhookSubscriptionCheckedAt?: string;
+  webhookSubscriptionError?: string;
   connectedAt?: string;
   expiresAt?: string;
   oauthState?: string;
@@ -209,7 +212,16 @@ export async function handleApiRequest(request: Request) {
     }
 
     if (request.method === "GET" && pathname === "/api/instagram/status") {
-      const data = await readData(getRequestStateId(request));
+      const stateId = getRequestStateId(request);
+      const data = await readData(stateId);
+      const subscriptionChanged = await ensureInstagramWebhookSubscription(
+        data,
+        "status",
+      );
+      if (subscriptionChanged) {
+        await writeData(data, stateId);
+      }
+
       return json(200, {
         webhookPath: "/api/instagram/webhook",
         oauthStartPath: "/api/auth/instagram/start",
@@ -238,6 +250,10 @@ export async function handleApiRequest(request: Request) {
         pageName: data.integration?.pageName,
         canSendPrivateReplies: canSendPrivateReplies(data),
         permissions: data.integration?.permissions ?? [],
+        webhookSubscribedAt: data.integration?.webhookSubscribedAt,
+        webhookSubscriptionCheckedAt:
+          data.integration?.webhookSubscriptionCheckedAt,
+        webhookSubscriptionError: data.integration?.webhookSubscriptionError,
         hasAppId: Boolean(getInstagramAppId()),
         hasFacebookAppId: Boolean(getFacebookAppId()),
         hasFacebookLoginConfigId: Boolean(getFacebookLoginConfigId()),
@@ -468,6 +484,7 @@ async function handleOAuthCallback(
     oauthRedirectUri: redirectUri,
     oauthAuthorizeUrl: oauthSession.oauthAuthorizeUrl,
   };
+  await ensureInstagramWebhookSubscription(data, "oauth");
   await writeData(data, stateId);
   return redirectToApp(request, "Instagram connected. Private replies are ready when comment permissions are granted.", [
     buildCookie(
@@ -1165,6 +1182,85 @@ async function exchangeForLongLivedToken(accessToken: string) {
   };
 }
 
+async function ensureInstagramWebhookSubscription(
+  data: DataFile,
+  diagnosticId: string,
+) {
+  const accessToken = getInstagramAccessToken(data);
+  const instagramUserId = getInstagramUserId(data);
+  if (!accessToken || !instagramUserId) {
+    return false;
+  }
+
+  if (data.integration?.webhookSubscribedAt) {
+    return false;
+  }
+
+  const lastCheckedAt = Date.parse(
+    data.integration?.webhookSubscriptionCheckedAt ?? "",
+  );
+  if (
+    Number.isFinite(lastCheckedAt) &&
+    Date.now() - lastCheckedAt < 5 * 60 * 1000
+  ) {
+    return false;
+  }
+
+  const fields = "comments,messages";
+  const url = new URL(
+    `https://graph.instagram.com/${getGraphVersion()}/${encodeURIComponent(instagramUserId)}/subscribed_apps`,
+  );
+  url.searchParams.set("subscribed_fields", fields);
+  url.searchParams.set("access_token", accessToken);
+
+  logDiagnostic("webhook_account_subscription_start", {
+    diagnosticId,
+    instagramUserId: safeId(instagramUserId),
+    fields,
+  });
+
+  data.integration = {
+    ...data.integration,
+    webhookSubscriptionCheckedAt: new Date().toISOString(),
+  };
+
+  const response = await fetch(url, { method: "POST" });
+  if (!response.ok) {
+    const error = await response.text();
+    data.integration = {
+      ...data.integration,
+      webhookSubscriptionError: labelMetaError(
+        "Instagram subscribed_apps",
+        error,
+      ),
+    };
+    logDiagnostic("webhook_account_subscription_failed", {
+      diagnosticId,
+      instagramUserId: safeId(instagramUserId),
+      status: response.status,
+      error: summarizeMetaError(error),
+    });
+    return true;
+  }
+
+  const payload = (await response.json().catch(() => ({}))) as {
+    success?: boolean;
+  };
+  data.integration = {
+    ...data.integration,
+    webhookSubscribedAt: new Date().toISOString(),
+    webhookSubscriptionError:
+      payload.success === false ? "Meta did not confirm subscription" : undefined,
+  };
+  logDiagnostic("webhook_account_subscription_enabled", {
+    diagnosticId,
+    instagramUserId: safeId(instagramUserId),
+    fields,
+    success: payload.success ?? true,
+  });
+  return true;
+}
+
 async function exchangeFacebookCodeForToken(code: string, redirectUri: string) {
   const url = new URL(`https://graph.facebook.com/${getGraphVersion()}/oauth/access_token`);
   url.searchParams.set("client_id", requiredEnv("FACEBOOK_APP_ID"));
@@ -1302,7 +1398,15 @@ async function handleInstagramMedia(request: Request) {
 async function syncInstagramComments(request: Request) {
   const diagnosticId = createDiagnosticId("sync");
   const stateId = getRequestStateId(request);
-  const data = await readData(getRequestStateId(request));
+  const data = await readData(stateId);
+  const subscriptionChanged = await ensureInstagramWebhookSubscription(
+    data,
+    diagnosticId,
+  );
+  if (subscriptionChanged) {
+    await writeData(data, stateId);
+  }
+
   const readContext = getInstagramReadContext(data);
   if (!readContext) {
     logDiagnostic("comment_sync_missing_connection", {

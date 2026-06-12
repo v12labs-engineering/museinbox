@@ -86,6 +86,9 @@ type InstagramStatus = {
   pageName?: string;
   canSendPrivateReplies: boolean;
   permissions: string[];
+  webhookSubscribedAt?: string;
+  webhookSubscriptionCheckedAt?: string;
+  webhookSubscriptionError?: string;
   hasAppId: boolean;
   hasVerifyToken: boolean;
   hasAppSecret: boolean;
@@ -1469,6 +1472,10 @@ function SettingsView({
       label: "Verify token",
       ready: Boolean(status?.hasVerifyToken),
     },
+    {
+      label: "Instagram webhook subscription",
+      ready: Boolean(status?.webhookSubscribedAt),
+    },
   ];
   const permissions = status?.permissions?.length ? status.permissions : [];
 
@@ -1556,6 +1563,16 @@ function SettingsView({
               <AlertDescription>
                 Reconnect Instagram with <code>instagram_business_basic</code>{" "}
                 and <code>instagram_business_manage_comments</code> permissions.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {status?.webhookSubscriptionError ? (
+            <Alert className="border-amber-200 bg-amber-50 text-amber-950">
+              <AlertTriangle className="size-4" />
+              <AlertTitle>Webhook subscription needs attention</AlertTitle>
+              <AlertDescription className="break-words">
+                {readableInstagramError(status.webhookSubscriptionError)}
               </AlertDescription>
             </Alert>
           ) : null}
