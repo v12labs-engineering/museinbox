@@ -38,6 +38,7 @@ type InstagramIntegration = {
   loginProvider?: "instagram" | "facebook";
   facebookUserId?: string;
   userId?: string;
+  webhookAccountIds?: string[];
   permissions?: string[];
   webhookSubscribedAt?: string;
   webhookSubscriptionCheckedAt?: string;
@@ -67,6 +68,7 @@ type InstagramMediaItem = {
   id: string;
   caption: string;
   mediaType: string;
+  ownerId?: string;
   mediaUrl?: string;
   thumbnailUrl?: string;
   permalink?: string;
@@ -218,7 +220,11 @@ export async function handleApiRequest(request: Request) {
         data,
         "status",
       );
-      if (subscriptionChanged) {
+      const aliasChanged = await discoverInstagramWebhookAccountAliases(
+        data,
+        "status",
+      );
+      if (subscriptionChanged || aliasChanged) {
         await writeData(data, stateId);
       }
 
@@ -244,6 +250,7 @@ export async function handleApiRequest(request: Request) {
         connectedAt: data.integration?.connectedAt,
         expiresAt: data.integration?.expiresAt,
         instagramUserId: data.integration?.userId,
+        webhookAccountIds: data.integration?.webhookAccountIds ?? [],
         facebookUserId: data.integration?.facebookUserId,
         loginProvider: data.integration?.loginProvider,
         pageId: data.integration?.pageId,
@@ -476,6 +483,12 @@ async function handleOAuthCallback(
     tokenType: longToken.token_type,
     loginProvider: "instagram",
     userId,
+    webhookAccountIds: [
+      userId,
+      ...(data.integration?.webhookAccountIds ?? []),
+    ]
+      .filter((value): value is string => Boolean(value))
+      .filter((value, index, values) => values.indexOf(value) === index),
     permissions: shortToken.permissions ?? [],
     connectedAt: new Date().toISOString(),
     expiresAt: longToken.expires_in
@@ -485,6 +498,7 @@ async function handleOAuthCallback(
     oauthAuthorizeUrl: oauthSession.oauthAuthorizeUrl,
   };
   await ensureInstagramWebhookSubscription(data, "oauth");
+  await discoverInstagramWebhookAccountAliases(data, "oauth");
   await writeData(data, stateId);
   return redirectToApp(request, "Instagram connected. Private replies are ready when comment permissions are granted.", [
     buildCookie(
@@ -535,6 +549,12 @@ async function handleFacebookOAuthCallback(
     loginProvider: "facebook",
     facebookUserId: profile.id,
     userId: page.instagramUserId,
+    webhookAccountIds: [
+      page.instagramUserId,
+      ...(data.integration?.webhookAccountIds ?? []),
+    ]
+      .filter((value): value is string => Boolean(value))
+      .filter((value, index, values) => values.indexOf(value) === index),
     permissions: longToken.permissions ?? data.integration?.permissions ?? [],
     connectedAt: new Date().toISOString(),
     expiresAt: longToken.expires_in
@@ -605,7 +625,9 @@ async function handleInstagramWebhook(request: Request) {
   });
 
   for (const event of events) {
-    const stateId = event.accountId ? accountStateId(event.accountId) : defaultStateId;
+    const stateId = event.accountId
+      ? await resolveWebhookStateId(event.accountId, diagnosticId)
+      : defaultStateId;
     const data = await readData(stateId);
     await processInstagramEvent(data, event, diagnosticId);
     await writeData(data, stateId);
@@ -710,17 +732,6 @@ async function sendInstagramPrivateReply(
   accessToken: string,
   diagnosticId: string,
 ): Promise<SendReplyResult> {
-  const directResult = await postInstagramPrivateReply(
-    instagramUserId,
-    commentId,
-    message,
-    accessToken,
-    diagnosticId,
-  );
-  if (directResult.ok || !shouldRetryPrivateReplyWithMe(directResult.error)) {
-    return directResult;
-  }
-
   const meResult = await postInstagramPrivateReply(
     "me",
     commentId,
@@ -728,14 +739,25 @@ async function sendInstagramPrivateReply(
     accessToken,
     diagnosticId,
   );
-  if (meResult.ok) {
+  if (meResult.ok || !shouldRetryPrivateReplyWithMe(meResult.error)) {
     return meResult;
+  }
+
+  const directResult = await postInstagramPrivateReply(
+    instagramUserId,
+    commentId,
+    message,
+    accessToken,
+    diagnosticId,
+  );
+  if (directResult.ok) {
+    return directResult;
   }
 
   return {
     ok: false,
-    error: joinSendErrors(directResult.error, meResult.error),
-    attempts: [...(directResult.attempts ?? []), ...(meResult.attempts ?? [])],
+    error: joinSendErrors(meResult.error, directResult.error),
+    attempts: [...(meResult.attempts ?? []), ...(directResult.attempts ?? [])],
   };
 }
 
@@ -1424,7 +1446,8 @@ async function fetchConnectedInstagramPage(accessToken: string) {
 }
 
 async function handleInstagramMedia(request: Request) {
-  const data = await readData(getRequestStateId(request));
+  const stateId = getRequestStateId(request);
+  const data = await readData(stateId);
   const readContext = getInstagramReadContext(data);
 
   if (!readContext) {
@@ -1432,6 +1455,15 @@ async function handleInstagramMedia(request: Request) {
   }
 
   const media = await fetchInstagramMedia(readContext);
+  if (
+    updateWebhookAccountAliases(
+      data,
+      media.map((item) => item.ownerId).filter(Boolean),
+      "media",
+    )
+  ) {
+    await writeData(data, stateId);
+  }
   return json(200, media);
 }
 
@@ -1608,6 +1640,7 @@ async function fetchInstagramMedia(
     [
       "id",
       "caption",
+      "owner",
       "media_type",
       "media_url",
       "thumbnail_url",
@@ -1630,6 +1663,7 @@ async function fetchInstagramMedia(
     id: stringFrom(item.id),
     caption: stringFrom(item.caption),
     mediaType: stringFrom(item.media_type),
+    ownerId: isRecord(item.owner) ? stringFrom(item.owner.id) || undefined : undefined,
     mediaUrl: stringFrom(item.media_url) || undefined,
     thumbnailUrl: stringFrom(item.thumbnail_url) || undefined,
     permalink: stringFrom(item.permalink) || undefined,
@@ -1839,6 +1873,137 @@ function getRequestStateId(request: Request) {
 
 function accountStateId(instagramUserId: string) {
   return instagramUserId ? `ig:${instagramUserId}` : defaultStateId;
+}
+
+async function resolveWebhookStateId(accountId: string, diagnosticId: string) {
+  const directStateId = accountStateId(accountId);
+  if (!hasSupabaseConfig()) {
+    return directStateId;
+  }
+
+  const resolvedStateId = await findSupabaseStateIdForWebhookAccount(accountId);
+  logDiagnostic("webhook_state_resolved", {
+    diagnosticId,
+    accountId: safeId(accountId),
+    stateId: safeId(resolvedStateId ?? directStateId),
+    matchedAlias: Boolean(resolvedStateId),
+  });
+  return resolvedStateId ?? directStateId;
+}
+
+async function findSupabaseStateIdForWebhookAccount(accountId: string) {
+  const url = supabaseRestUrl();
+  url.searchParams.set("select", "id,data");
+  url.searchParams.set("order", "updated_at.desc");
+  url.searchParams.set("limit", "100");
+
+  const response = await fetch(url, {
+    headers: supabaseHeaders(),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`Supabase webhook state lookup failed: ${await response.text()}`);
+  }
+
+  const rows = (await response.json()) as Array<{ id?: unknown; data?: unknown }>;
+  for (const row of rows) {
+    const data = row.data;
+    if (!isRecord(data) || !isRecord(data.integration)) {
+      continue;
+    }
+
+    const userId = stringFrom(data.integration.userId);
+    const aliases = Array.isArray(data.integration.webhookAccountIds)
+      ? data.integration.webhookAccountIds.filter(
+          (value): value is string => typeof value === "string",
+        )
+      : [];
+    if (userId === accountId || aliases.includes(accountId)) {
+      return stringFrom(row.id) || null;
+    }
+  }
+
+  return null;
+}
+
+async function discoverInstagramWebhookAccountAliases(
+  data: DataFile,
+  diagnosticId: string,
+) {
+  const readContext = getInstagramReadContext(data);
+  if (!readContext) {
+    return false;
+  }
+
+  try {
+    const accountIds = await fetchInstagramWebhookAccountIds(readContext);
+    return updateWebhookAccountAliases(data, accountIds, diagnosticId);
+  } catch (error) {
+    logDiagnostic("webhook_alias_discovery_failed", {
+      diagnosticId,
+      error: summarizeMetaError(messageFromUnknown(error)),
+    });
+    return false;
+  }
+}
+
+async function fetchInstagramWebhookAccountIds(context: InstagramReadContext) {
+  const mediaOwner =
+    context.graphHost === "facebook" && context.instagramUserId
+      ? encodeURIComponent(context.instagramUserId)
+      : "me";
+  const url = new URL(`${graphBaseUrl(context)}/${mediaOwner}/media`);
+  url.searchParams.set("fields", "id,owner");
+  url.searchParams.set("limit", "5");
+  url.searchParams.set("access_token", context.accessToken);
+
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Instagram webhook alias discovery failed: ${await response.text()}`);
+  }
+
+  const payload = (await response.json()) as { data?: unknown[] };
+  return (payload.data ?? [])
+    .filter(isRecord)
+    .map((item) => (isRecord(item.owner) ? stringFrom(item.owner.id) : ""))
+    .filter((value): value is string => Boolean(value));
+}
+
+function updateWebhookAccountAliases(
+  data: DataFile,
+  accountIds: Array<string | undefined>,
+  diagnosticId: string,
+) {
+  const integration = data.integration;
+  if (!integration) {
+    return false;
+  }
+
+  const aliases = [
+    integration.userId,
+    ...(integration.webhookAccountIds ?? []),
+    ...accountIds,
+  ]
+    .filter((value): value is string => typeof value === "string" && value.length > 0)
+    .filter((value, index, values) => values.indexOf(value) === index);
+
+  const currentAliases = integration.webhookAccountIds ?? [];
+  const changed =
+    aliases.length !== currentAliases.length ||
+    aliases.some((value) => !currentAliases.includes(value));
+  if (!changed) {
+    return false;
+  }
+
+  data.integration = {
+    ...integration,
+    webhookAccountIds: aliases,
+  };
+  logDiagnostic("webhook_aliases_updated", {
+    diagnosticId,
+    aliases: aliases.map(safeId),
+  });
+  return true;
 }
 
 function readSignedCookie<T>(request: Request, name: string): T | null {
