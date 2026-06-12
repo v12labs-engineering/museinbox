@@ -39,6 +39,8 @@ export type Activity = {
     | "instagram_mention"
     | "instagram_message";
   error?: string;
+  diagnosticId?: string;
+  deliveryAttempts?: string[];
 };
 
 export type DraftRule = Omit<Rule, "id" | "createdAt" | "updatedAt">;

@@ -81,6 +81,20 @@ type InstagramCommentItem = {
   parentId?: string;
 };
 
+type SendReplyResult =
+  | {
+      ok: true;
+      status: "sent" | "dry_run";
+      error?: undefined;
+      attempts?: string[];
+    }
+  | {
+      ok: false;
+      error: string;
+      status?: undefined;
+      attempts?: string[];
+    };
+
 const dataDirectory = path.resolve(
   process.env.MUSEINBOX_DATA_DIR ??
     (process.env.VERCEL ? "/tmp/museinbox" : ".museinbox"),
@@ -557,18 +571,26 @@ function verifyWebhook(requestUrl: URL) {
 }
 
 async function handleInstagramWebhook(request: Request) {
+  const diagnosticId = createDiagnosticId("webhook");
   const rawBody = Buffer.from(await request.arrayBuffer());
   if (!verifySignature(request, rawBody)) {
+    logDiagnostic("webhook_signature_rejected", { diagnosticId });
     return json(403, { error: "Invalid Meta signature" });
   }
 
   const body = JSON.parse(rawBody.toString("utf8")) as unknown;
   const events = extractInstagramWebhookEvents(body);
+  logDiagnostic("webhook_received", {
+    diagnosticId,
+    events: events.length,
+    eventKinds: events.map((event) => event.kind),
+    accountIds: events.map((event) => safeId(event.accountId)),
+  });
 
   for (const event of events) {
     const stateId = event.accountId ? accountStateId(event.accountId) : defaultStateId;
     const data = await readData(stateId);
-    await processInstagramEvent(data, event);
+    await processInstagramEvent(data, event, diagnosticId);
     await writeData(data, stateId);
   }
 
@@ -579,13 +601,14 @@ async function sendWebhookReply(
   data: DataFile,
   replyTarget: InstagramWebhookEvent["replyTarget"],
   message: string,
+  diagnosticId: string,
 ) {
   if (replyTarget.type === "comment") {
-    return sendPrivateReply(data, replyTarget.commentId, message);
+    return sendPrivateReply(data, replyTarget.commentId, message, diagnosticId);
   }
 
   if (replyTarget.type === "message") {
-    return sendInstagramMessage(data, replyTarget.senderId, message);
+    return sendInstagramMessage(data, replyTarget.senderId, message, diagnosticId);
   }
 
   return {
@@ -598,12 +621,23 @@ async function sendPrivateReply(
   data: DataFile,
   commentId: string,
   message: string,
-): Promise<
-  | { ok: true; status: "sent" | "dry_run"; error?: undefined }
-  | { ok: false; error: string; status?: undefined }
-> {
+  diagnosticId: string,
+): Promise<SendReplyResult> {
+  logDiagnostic("private_reply_start", {
+    diagnosticId,
+    commentId: safeId(commentId),
+    hasInstagramAccess: Boolean(getInstagramAccessToken(data)),
+    instagramUserId: safeId(getInstagramUserId(data)),
+    hasPageAccess: Boolean(getPageAccessToken(data)),
+    pageId: safeId(getPageId(data)),
+    loginProvider: data.integration?.loginProvider,
+    permissions: data.integration?.permissions,
+    messageLength: message.length,
+  });
+
   if (process.env.INSTAGRAM_DRY_RUN === "true") {
-    return { ok: true, status: "dry_run" as const };
+    logDiagnostic("private_reply_dry_run", { diagnosticId });
+    return { ok: true, status: "dry_run" as const, attempts: ["dry_run"] };
   }
 
   const accessToken = getInstagramAccessToken(data);
@@ -614,6 +648,7 @@ async function sendPrivateReply(
       commentId,
       message,
       accessToken,
+      diagnosticId,
     );
     if (instagramResult.ok) {
       return instagramResult;
@@ -627,6 +662,7 @@ async function sendPrivateReply(
         commentId,
         message,
         pageAccessToken,
+        diagnosticId,
       );
       if (pageResult.ok) {
         return pageResult;
@@ -635,6 +671,7 @@ async function sendPrivateReply(
       return {
         ok: false,
         error: joinSendErrors(instagramResult.error, pageResult.error),
+        attempts: [...(instagramResult.attempts ?? []), ...(pageResult.attempts ?? [])],
       };
     }
 
@@ -645,6 +682,7 @@ async function sendPrivateReply(
     ok: false,
     error:
       "Private replies require a connected Instagram professional account. Reconnect Instagram before sending comment-to-DM replies.",
+    attempts: ["missing_instagram_connection"],
   };
 }
 
@@ -653,15 +691,14 @@ async function sendInstagramPrivateReply(
   commentId: string,
   message: string,
   accessToken: string,
-): Promise<
-  | { ok: true; status: "sent"; error?: undefined }
-  | { ok: false; error: string; status?: undefined }
-> {
+  diagnosticId: string,
+): Promise<SendReplyResult> {
   const directResult = await postInstagramPrivateReply(
     instagramUserId,
     commentId,
     message,
     accessToken,
+    diagnosticId,
   );
   if (directResult.ok || !shouldRetryPrivateReplyWithMe(directResult.error)) {
     return directResult;
@@ -672,6 +709,7 @@ async function sendInstagramPrivateReply(
     commentId,
     message,
     accessToken,
+    diagnosticId,
   );
   if (meResult.ok) {
     return meResult;
@@ -680,6 +718,7 @@ async function sendInstagramPrivateReply(
   return {
     ok: false,
     error: joinSendErrors(directResult.error, meResult.error),
+    attempts: [...(directResult.attempts ?? []), ...(meResult.attempts ?? [])],
   };
 }
 
@@ -688,10 +727,17 @@ async function postInstagramPrivateReply(
   commentId: string,
   message: string,
   accessToken: string,
-): Promise<
-  | { ok: true; status: "sent"; error?: undefined }
-  | { ok: false; error: string; status?: undefined }
-> {
+  diagnosticId: string,
+): Promise<SendReplyResult> {
+  const route = `Instagram ${targetId}/messages`;
+  logDiagnostic("private_reply_route_attempt", {
+    diagnosticId,
+    route,
+    targetId: safeId(targetId),
+    commentId: safeId(commentId),
+    host: "graph.instagram.com",
+  });
+
   const result = await fetch(
     `https://graph.instagram.com/${getGraphVersion()}/${encodeURIComponent(targetId)}/messages`,
     {
@@ -708,13 +754,26 @@ async function postInstagramPrivateReply(
   );
 
   if (!result.ok) {
+    const error = await result.text();
+    logDiagnostic("private_reply_route_failed", {
+      diagnosticId,
+      route,
+      status: result.status,
+      error: summarizeMetaError(error),
+    });
     return {
       ok: false,
-      error: labelMetaError(`Instagram ${targetId}/messages`, await result.text()),
+      error: labelMetaError(route, error),
+      attempts: [`${route}: ${result.status}`],
     };
   }
 
-  return { ok: true, status: "sent" as const };
+  logDiagnostic("private_reply_route_sent", {
+    diagnosticId,
+    route,
+    status: result.status,
+  });
+  return { ok: true, status: "sent" as const, attempts: [`${route}: sent`] };
 }
 
 async function sendPagePrivateReply(
@@ -722,10 +781,17 @@ async function sendPagePrivateReply(
   commentId: string,
   message: string,
   accessToken: string,
-): Promise<
-  | { ok: true; status: "sent"; error?: undefined }
-  | { ok: false; error: string; status?: undefined }
-> {
+  diagnosticId: string,
+): Promise<SendReplyResult> {
+  const route = "Facebook Page messages";
+  logDiagnostic("private_reply_route_attempt", {
+    diagnosticId,
+    route,
+    pageId: safeId(pageId),
+    commentId: safeId(commentId),
+    host: "graph.facebook.com",
+  });
+
   const result = await fetch(
     `https://graph.facebook.com/${getGraphVersion()}/${encodeURIComponent(pageId)}/messages`,
     {
@@ -742,26 +808,46 @@ async function sendPagePrivateReply(
   );
 
   if (!result.ok) {
+    const error = await result.text();
+    logDiagnostic("private_reply_route_failed", {
+      diagnosticId,
+      route,
+      status: result.status,
+      error: summarizeMetaError(error),
+    });
     return {
       ok: false,
-      error: labelMetaError("Facebook Page messages", await result.text()),
+      error: labelMetaError(route, error),
+      attempts: [`${route}: ${result.status}`],
     };
   }
 
-  return { ok: true, status: "sent" as const };
+  logDiagnostic("private_reply_route_sent", {
+    diagnosticId,
+    route,
+    status: result.status,
+  });
+  return { ok: true, status: "sent" as const, attempts: [`${route}: sent`] };
 }
 
 async function sendInstagramMessage(
   data: DataFile,
   senderId: string,
   message: string,
-): Promise<
-  | { ok: true; status: "sent" | "dry_run"; error?: undefined }
-  | { ok: false; error: string; status?: undefined }
-> {
+  diagnosticId: string,
+): Promise<SendReplyResult> {
   const accessToken = getAccessToken(data);
+  logDiagnostic("message_reply_start", {
+    diagnosticId,
+    senderId: safeId(senderId),
+    hasAccessToken: Boolean(accessToken),
+    hasPageAccess: Boolean(getPageAccessToken(data)),
+    pageId: safeId(getPageId(data)),
+    messageLength: message.length,
+  });
 
   if (process.env.INSTAGRAM_DRY_RUN === "true") {
+    logDiagnostic("message_reply_dry_run", { diagnosticId });
     return { ok: true, status: "dry_run" as const };
   }
 
@@ -782,13 +868,26 @@ async function sendInstagramMessage(
     );
 
     if (!result.ok) {
-      return { ok: false, error: await result.text() };
+      const error = await result.text();
+      logDiagnostic("message_reply_failed", {
+        diagnosticId,
+        route: "Facebook Page messages",
+        status: result.status,
+        error: summarizeMetaError(error),
+      });
+      return { ok: false, error };
     }
 
+    logDiagnostic("message_reply_sent", {
+      diagnosticId,
+      route: "Facebook Page messages",
+      status: result.status,
+    });
     return { ok: true, status: "sent" as const };
   }
 
   if (!accessToken) {
+    logDiagnostic("message_reply_missing_token", { diagnosticId });
     return { ok: false, error: "Connect Instagram first" };
   }
 
@@ -806,22 +905,70 @@ async function sendInstagramMessage(
   );
 
   if (!result.ok) {
-    return { ok: false, error: await result.text() };
+    const error = await result.text();
+    logDiagnostic("message_reply_failed", {
+      diagnosticId,
+      route: "Instagram me/messages",
+      status: result.status,
+      error: summarizeMetaError(error),
+    });
+    return { ok: false, error };
   }
 
+  logDiagnostic("message_reply_sent", {
+    diagnosticId,
+    route: "Instagram me/messages",
+    status: result.status,
+  });
   return { ok: true, status: "sent" as const };
 }
 
-async function processInstagramEvent(data: DataFile, event: InstagramWebhookEvent) {
+async function processInstagramEvent(
+  data: DataFile,
+  event: InstagramWebhookEvent,
+  diagnosticId: string,
+) {
+  logDiagnostic("event_processing_start", {
+    diagnosticId,
+    eventId: safeId(event.id),
+    kind: event.kind,
+    mediaId: safeId(event.mediaId),
+    replyTarget:
+      event.replyTarget.type === "comment"
+        ? { type: "comment", commentId: safeId(event.replyTarget.commentId) }
+        : event.replyTarget.type === "message"
+          ? { type: "message", senderId: safeId(event.replyTarget.senderId) }
+          : { type: "unsupported" },
+    rules: data.rules.length,
+    activeRules: data.rules.filter((rule) => rule.active).length,
+    hasInstagramAccess: Boolean(getInstagramAccessToken(data)),
+    instagramUserId: safeId(getInstagramUserId(data)),
+    hasPageAccess: Boolean(getPageAccessToken(data)),
+  });
+
   if (
     event.replyTarget.type === "comment" &&
     data.processedCommentIds?.includes(event.replyTarget.commentId)
   ) {
+    logDiagnostic("event_skipped_already_processed", {
+      diagnosticId,
+      commentId: safeId(event.replyTarget.commentId),
+    });
     return;
   }
 
   const matchedRule = findMatchingRule(event.text, data.rules, event.mediaId);
   const dm = matchedRule ? composeDm(matchedRule) : "";
+  logDiagnostic("event_rule_match_evaluated", {
+    diagnosticId,
+    eventId: safeId(event.id),
+    mediaId: safeId(event.mediaId),
+    matched: Boolean(matchedRule),
+    matchedRuleId: safeId(matchedRule?.id),
+    matchedRuleName: matchedRule?.name,
+    triggerType: matchedRule?.triggerType,
+    dmLength: dm.length,
+  });
   const entry: Activity = {
     id: randomUUID(),
     externalId:
@@ -841,12 +988,19 @@ async function processInstagramEvent(data: DataFile, event: InstagramWebhookEven
         : event.kind === "mention"
           ? "instagram_mention"
           : "instagram_message",
+    diagnosticId,
   };
 
   if (matchedRule && dm) {
-    const sendResult = await sendWebhookReply(data, event.replyTarget, dm);
+    const sendResult = await sendWebhookReply(
+      data,
+      event.replyTarget,
+      dm,
+      diagnosticId,
+    );
     entry.status = sendResult.ok ? sendResult.status : "failed";
     entry.error = sendResult.error;
+    entry.deliveryAttempts = sendResult.attempts;
 
     if (sendResult.ok && event.replyTarget.type === "comment") {
       const commentId = event.replyTarget.commentId;
@@ -858,6 +1012,15 @@ async function processInstagramEvent(data: DataFile, event: InstagramWebhookEven
   }
 
   data.activity = [entry, ...data.activity].slice(0, 50);
+  logDiagnostic("activity_entry_written", {
+    diagnosticId,
+    activityId: safeId(entry.id),
+    status: entry.status,
+    source: entry.source,
+    matchedRuleName: entry.matchedRuleName,
+    hasError: Boolean(entry.error),
+    deliveryAttempts: entry.deliveryAttempts,
+  });
 }
 
 function extractInstagramWebhookEvents(body: unknown): InstagramWebhookEvent[] {
@@ -1137,9 +1300,15 @@ async function handleInstagramMedia(request: Request) {
 }
 
 async function syncInstagramComments(request: Request) {
+  const diagnosticId = createDiagnosticId("sync");
+  const stateId = getRequestStateId(request);
   const data = await readData(getRequestStateId(request));
   const readContext = getInstagramReadContext(data);
   if (!readContext) {
+    logDiagnostic("comment_sync_missing_connection", {
+      diagnosticId,
+      stateId: safeId(stateId),
+    });
     return json(401, { error: "Connect Instagram first" });
   }
 
@@ -1152,8 +1321,27 @@ async function syncInstagramComments(request: Request) {
   });
 
   if (mediaIds.length === 0) {
+    logDiagnostic("comment_sync_no_media", {
+      diagnosticId,
+      stateId: safeId(stateId),
+      rules: data.rules.length,
+    });
     return json(400, { error: "Pick a post or create a post-specific automation first" });
   }
+
+  logDiagnostic("comment_sync_start", {
+    diagnosticId,
+    stateId: safeId(stateId),
+    mediaIds: mediaIds.map(safeId),
+    requestedMediaId: safeId(payload.mediaId),
+    graphHost: readContext.graphHost,
+    instagramUserId: safeId(readContext.instagramUserId ?? getInstagramUserId(data)),
+    hasInstagramAccess: Boolean(getInstagramAccessToken(data)),
+    hasPageAccess: Boolean(getPageAccessToken(data)),
+    permissions: data.integration?.permissions,
+    rules: data.rules.length,
+    activeRules: data.rules.filter((rule) => rule.active).length,
+  });
 
   let checked = 0;
   let acted = 0;
@@ -1163,9 +1351,20 @@ async function syncInstagramComments(request: Request) {
     let comments: InstagramCommentItem[];
     try {
       comments = await fetchInstagramComments(readContext, mediaId);
+      logDiagnostic("comment_sync_comments_fetched", {
+        diagnosticId,
+        mediaId: safeId(mediaId),
+        comments: comments.length,
+      });
     } catch (error) {
       const message = messageFromUnknown(error);
       const status = isExpiredMetaTokenError(message) ? 401 : 502;
+      logDiagnostic("comment_sync_comments_fetch_failed", {
+        diagnosticId,
+        mediaId: safeId(mediaId),
+        status,
+        error: summarizeMetaError(message),
+      });
       return json(status, {
         error: isExpiredMetaTokenError(message)
           ? "Instagram connection expired. Reconnect Instagram, then check comments again."
@@ -1176,21 +1375,42 @@ async function syncInstagramComments(request: Request) {
     for (const comment of comments) {
       checked += 1;
       if (comment.parentId || data.processedCommentIds?.includes(comment.id)) {
+        logDiagnostic("comment_sync_comment_skipped", {
+          diagnosticId,
+          commentId: safeId(comment.id),
+          mediaId: safeId(mediaId),
+          reason: comment.parentId ? "reply_comment" : "already_processed",
+        });
         continue;
       }
 
       const matchingRule = findMatchingRule(comment.text, data.rules, mediaId);
       if (!matchingRule || !commentIsEligibleForRule(comment, matchingRule)) {
+        logDiagnostic("comment_sync_comment_no_action", {
+          diagnosticId,
+          commentId: safeId(comment.id),
+          mediaId: safeId(mediaId),
+          matched: Boolean(matchingRule),
+          matchedRuleId: safeId(matchingRule?.id),
+          reason: matchingRule ? "older_than_rule" : "no_matching_rule",
+        });
         continue;
       }
 
+      logDiagnostic("comment_sync_comment_matched", {
+        diagnosticId,
+        commentId: safeId(comment.id),
+        mediaId: safeId(mediaId),
+        matchedRuleId: safeId(matchingRule.id),
+        matchedRuleName: matchingRule.name,
+      });
       await processInstagramEvent(data, {
         id: comment.id,
         kind: "comment",
         text: comment.text,
         mediaId,
         replyTarget: { type: "comment", commentId: comment.id },
-      });
+      }, diagnosticId);
       const latestEntry = data.activity[0];
       if (latestEntry) {
         latestEntry.source = "instagram_comment_sync";
@@ -1206,9 +1426,18 @@ async function syncInstagramComments(request: Request) {
     }
   }
 
-  await writeData(data, getRequestStateId(request));
+  await writeData(data, stateId);
+  logDiagnostic("comment_sync_finished", {
+    diagnosticId,
+    stateId: safeId(stateId),
+    checked,
+    acted,
+    failed,
+    errors: errors.map(summarizeMetaError),
+  });
   return json(200, {
     ok: true,
+    diagnosticId,
     checked,
     acted,
     failed,
@@ -1538,6 +1767,87 @@ function clearCookie(name: string) {
 
 function messageFromUnknown(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function createDiagnosticId(prefix: string) {
+  return `${prefix}_${randomUUID().slice(0, 8)}`;
+}
+
+function logDiagnostic(event: string, details: Record<string, unknown> = {}) {
+  const safeDetails = redactDiagnosticDetails(details);
+  console.info(
+    JSON.stringify({
+      component: "museinbox",
+      event,
+      at: new Date().toISOString(),
+      ...safeDetails,
+    }),
+  );
+}
+
+function redactDiagnosticDetails(value: Record<string, unknown>): Record<string, unknown>;
+function redactDiagnosticDetails(value: unknown): unknown;
+function redactDiagnosticDetails(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(redactDiagnosticDetails);
+  }
+
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => {
+      if (/token|secret|authorization|cookie|key/i.test(key)) {
+        return [key, item ? "[redacted]" : item];
+      }
+
+      return [key, redactDiagnosticDetails(item)];
+    }),
+  );
+}
+
+function safeId(value: unknown) {
+  const id = stringFrom(value);
+  if (!id) {
+    return undefined;
+  }
+
+  if (id === "me") {
+    return id;
+  }
+
+  return `${id.slice(0, 4)}...${id.slice(-4)}`;
+}
+
+function summarizeMetaError(value: string) {
+  const payloadStart = value.indexOf("{");
+  const jsonValue = payloadStart >= 0 ? value.slice(payloadStart) : value;
+
+  try {
+    const payload = JSON.parse(jsonValue) as {
+      error?: {
+        message?: string;
+        type?: string;
+        code?: number;
+        error_subcode?: number;
+        fbtrace_id?: string;
+      };
+    };
+    if (payload.error) {
+      return {
+        message: payload.error.message,
+        type: payload.error.type,
+        code: payload.error.code,
+        subcode: payload.error.error_subcode,
+        traceId: payload.error.fbtrace_id,
+      };
+    }
+  } catch {
+    // Fall through to text summary.
+  }
+
+  return value.slice(0, 500);
 }
 
 function isExpiredMetaTokenError(message: string) {

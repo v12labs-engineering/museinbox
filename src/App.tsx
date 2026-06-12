@@ -1407,6 +1407,21 @@ function ActivityCard({
                     {entry.dm}
                   </p>
                 </div>
+                {entry.diagnosticId || entry.deliveryAttempts?.length ? (
+                  <div className="mt-2 min-w-0 rounded-lg border border-border bg-muted/35 p-3 text-xs text-muted-foreground">
+                    {entry.diagnosticId ? (
+                      <p className="font-black">
+                        Debug ID:{" "}
+                        <span className="font-mono">{entry.diagnosticId}</span>
+                      </p>
+                    ) : null}
+                    {entry.deliveryAttempts?.length ? (
+                      <p className="mt-1 break-words font-semibold">
+                        Routes: {entry.deliveryAttempts.join(" -> ")}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
                 {entry.error ? (
                   <div className="mt-2 min-w-0 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">
                     <p className="font-black">Instagram rejected this DM.</p>
