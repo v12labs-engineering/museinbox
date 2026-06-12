@@ -190,6 +190,7 @@ function App({ currentView }: AppProps) {
   const [draft, setDraft] = useState<DraftRule>(emptyDraft);
   const [sampleComment, setSampleComment] = useState("Can you send the link?");
   const [status, setStatus] = useState<InstagramStatus | null>(null);
+  const [statusLoaded, setStatusLoaded] = useState(false);
   const [media, setMedia] = useState<InstagramMediaItem[]>([]);
   const [selectedMediaId, setSelectedMediaId] = useState<string>("");
   const [automationScope, setAutomationScope] = useState<
@@ -258,6 +259,8 @@ function App({ currentView }: AppProps) {
       }
     } catch (loadError) {
       setError(messageFromError(loadError));
+    } finally {
+      setStatusLoaded(true);
     }
   }
 
@@ -504,6 +507,22 @@ function App({ currentView }: AppProps) {
   const isEditingRule = Boolean(selectedRule);
   const connectionReady = Boolean(status?.connected);
 
+  useEffect(() => {
+    if (!statusLoaded || connectionReady) {
+      return;
+    }
+
+    window.location.replace("/login");
+  }, [connectionReady, statusLoaded]);
+
+  if (!statusLoaded) {
+    return <AuthTransitionView title="Checking Instagram connection" />;
+  }
+
+  if (!connectionReady) {
+    return <AuthTransitionView title="Opening login" />;
+  }
+
   return (
     <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(253,186,116,0.28),transparent_34%),linear-gradient(180deg,#fff7f4_0%,#fff_38%,#fafafa_100%)] text-foreground">
       <div className="mx-auto grid min-h-screen w-full max-w-[1540px] lg:grid-cols-[252px_minmax(0,1fr)]">
@@ -671,6 +690,22 @@ function App({ currentView }: AppProps) {
         onSelectMediaTarget={selectMediaTarget}
         onUpdateDraft={setDraft}
       />
+    </main>
+  );
+}
+
+function AuthTransitionView({ title }: { title: string }) {
+  return (
+    <main className="grid min-h-screen place-items-center overflow-x-hidden bg-[radial-gradient(circle_at_15%_10%,rgba(253,186,116,0.38),transparent_30%),radial-gradient(circle_at_85%_10%,rgba(225,48,108,0.22),transparent_28%),linear-gradient(180deg,#fff7f4_0%,#fff_48%,#fafafa_100%)] p-4 text-foreground">
+      <div className="flex items-center gap-3 rounded-2xl border border-border bg-background/90 p-4 shadow-[0_20px_60px_rgba(225,48,108,0.14)]">
+        <MuseInboxLogo />
+        <div>
+          <p className="text-sm font-black">{title}</p>
+          <p className="text-xs font-semibold text-muted-foreground">
+            MuseInbox
+          </p>
+        </div>
+      </div>
     </main>
   );
 }
