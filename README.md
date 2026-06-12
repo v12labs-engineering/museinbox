@@ -26,7 +26,10 @@ Run `supabase/schema.sql` in the Supabase SQL editor, then set these environment
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `APP_ENCRYPTION_KEY`
+- `APP_SESSION_SECRET` optional; if omitted, `APP_ENCRYPTION_KEY` is used
 
 When Supabase is configured, MuseInbox stores rules, activity, and Instagram OAuth state in Supabase. Instagram access tokens are encrypted before they are saved.
+
+Instagram login is also the account signup flow. After a user approves Instagram access, MuseInbox creates or finds a Supabase state row for that Instagram account and signs the browser into that account with an HTTP-only session cookie.
 
 Without Supabase variables, the app falls back to local JSON storage in `.museinbox/data.json`.

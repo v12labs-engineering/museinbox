@@ -43,6 +43,7 @@ type InstagramIntegration = {
 
 type InstagramWebhookEvent = {
   id: string;
+  accountId?: string;
   kind: "comment" | "mention" | "message";
   text: string;
   mediaId?: string;
@@ -70,7 +71,9 @@ const dataDirectory = path.resolve(
 );
 const dataPath = path.join(dataDirectory, "data.json");
 const supabaseStateTable = "museinbox_state";
-const supabaseStateId = "default";
+const defaultStateId = "default";
+const sessionCookieName = "museinbox_session";
+const oauthCookieName = "museinbox_oauth";
 const defaultScopes = [
   "instagram_business_basic",
   "instagram_business_manage_messages",
@@ -130,7 +133,7 @@ export async function handleApiRequest(request: Request) {
     }
 
     if (request.method === "GET" && pathname === "/api/instagram/media") {
-      return handleInstagramMedia();
+      return handleInstagramMedia(request);
     }
 
     if (request.method === "GET" && pathname === "/api/auth/instagram/start") {
@@ -148,11 +151,11 @@ export async function handleApiRequest(request: Request) {
       request.method === "POST" &&
       pathname === "/api/auth/instagram/disconnect"
     ) {
-      return disconnectInstagram();
+      return disconnectInstagram(request);
     }
 
     if (request.method === "GET" && pathname === "/api/instagram/status") {
-      const data = await readData();
+      const data = await readData(getRequestStateId(request));
       return json(200, {
         webhookPath: "/api/instagram/webhook",
         oauthStartPath: "/api/auth/instagram/start",
@@ -186,7 +189,7 @@ export async function handleApiRequest(request: Request) {
 
 async function handleRules(request: Request) {
   if (request.method === "GET") {
-    const data = await readData();
+    const data = await readData(getRequestStateId(request));
     return json(200, data.rules);
   }
 
@@ -200,9 +203,10 @@ async function handleRules(request: Request) {
       createdAt: now,
       updatedAt: now,
     };
-    const data = await readData();
+    const stateId = getRequestStateId(request);
+    const data = await readData(stateId);
     data.rules = [rule, ...data.rules];
-    await writeData(data);
+    await writeData(data, stateId);
     return json(201, rule);
   }
 
@@ -211,7 +215,8 @@ async function handleRules(request: Request) {
 
 async function handleRuleById(request: Request, pathname: string) {
   const id = decodeURIComponent(pathname.replace("/api/rules/", ""));
-  const data = await readData();
+  const stateId = getRequestStateId(request);
+  const data = await readData(stateId);
   const rule = data.rules.find((item) => item.id === id);
 
   if (!rule) {
@@ -227,13 +232,13 @@ async function handleRuleById(request: Request, pathname: string) {
       updatedAt: new Date().toISOString(),
     };
     data.rules = data.rules.map((item) => (item.id === id ? updatedRule : item));
-    await writeData(data);
+    await writeData(data, stateId);
     return json(200, updatedRule);
   }
 
   if (request.method === "DELETE") {
     data.rules = data.rules.filter((item) => item.id !== id);
-    await writeData(data);
+    await writeData(data, stateId);
     return json(200, { ok: true });
   }
 
@@ -241,7 +246,8 @@ async function handleRuleById(request: Request, pathname: string) {
 }
 
 async function handleActivity(request: Request) {
-  const data = await readData();
+  const stateId = getRequestStateId(request);
+  const data = await readData(stateId);
 
   if (request.method === "GET") {
     return json(200, data.activity);
@@ -262,7 +268,7 @@ async function handleActivity(request: Request) {
       source: "local_preview",
     };
     data.activity = [entry, ...data.activity].slice(0, 50);
-    await writeData(data);
+    await writeData(data, stateId);
     return json(201, entry);
   }
 
@@ -279,14 +285,7 @@ async function startInstagramOAuth(request: Request) {
   }
 
   const redirectUri = getOAuthRedirectUri(request);
-  const data = await readData();
-  data.integration = {
-    ...data.integration,
-    oauthState: undefined,
-    oauthStartedAt: new Date().toISOString(),
-    oauthRedirectUri: redirectUri,
-  };
-  await writeData(data);
+  const state = randomUUID();
 
   const scopes = process.env.INSTAGRAM_OAUTH_SCOPES ?? defaultScopes;
   const authUrl = [
@@ -295,14 +294,22 @@ async function startInstagramOAuth(request: Request) {
     `client_id=${encodeURIComponent(clientId)}`,
     `redirect_uri=${encodeURIComponent(redirectUri)}`,
     "response_type=code",
+    `state=${encodeURIComponent(state)}`,
     `scope=${encodeURIComponent(scopes)}`,
   ].join("&").replace("&", "?");
 
-  data.integration.oauthAuthorizeUrl = authUrl;
-  data.integration.lastOAuthError = undefined;
-  await writeData(data);
-
-  return Response.redirect(authUrl, 302);
+  return redirect(authUrl, [
+    buildCookie(
+      oauthCookieName,
+      signCookieValue({
+        state,
+        redirectUri,
+        oauthStartedAt: new Date().toISOString(),
+        oauthAuthorizeUrl: authUrl,
+      }),
+      10 * 60,
+    ),
+  ]);
 }
 
 async function handleInstagramOAuthCallback(request: Request, requestUrl: URL) {
@@ -314,46 +321,69 @@ async function handleInstagramOAuthCallback(request: Request, requestUrl: URL) {
 
   const code = requestUrl.searchParams.get("code");
   const state = requestUrl.searchParams.get("state");
-  const data = await readData();
+  const oauthSession = readSignedCookie<{
+    state?: string;
+    redirectUri?: string;
+    oauthAuthorizeUrl?: string;
+  }>(request, oauthCookieName);
   if (!code) {
     return redirectToApp(request, "Instagram connection failed: missing OAuth code");
   }
 
-  if (data.integration?.oauthState && state !== data.integration.oauthState) {
+  if (!oauthSession?.state || state !== oauthSession.state) {
     return redirectToApp(request, "Instagram connection failed: invalid OAuth state");
   }
 
-  const redirectUri = data.integration?.oauthRedirectUri ?? getOAuthRedirectUri(request);
+  const redirectUri = oauthSession.redirectUri ?? getOAuthRedirectUri(request);
   let shortToken: Awaited<ReturnType<typeof exchangeCodeForShortToken>>;
   try {
     shortToken = await exchangeCodeForShortToken(code, redirectUri);
   } catch (exchangeError) {
+    const stateId = getRequestStateId(request);
+    const data = await readData(stateId);
     data.integration = {
       ...data.integration,
       lastOAuthError:
         exchangeError instanceof Error ? exchangeError.message : "Unknown OAuth error",
     };
-    await writeData(data);
+    await writeData(data, stateId);
     throw exchangeError;
   }
 
   const longToken = await exchangeForLongLivedToken(shortToken.access_token);
+  const userId = String(shortToken.user_id ?? "");
+  const stateId = accountStateId(userId);
+  const data = await readData(stateId);
   data.integration = {
     accessToken: longToken.access_token,
     tokenType: longToken.token_type,
-    userId: String(shortToken.user_id ?? ""),
+    userId,
     permissions: shortToken.permissions ?? [],
     connectedAt: new Date().toISOString(),
     expiresAt: longToken.expires_in
       ? new Date(Date.now() + longToken.expires_in * 1000).toISOString()
       : undefined,
+    oauthRedirectUri: redirectUri,
+    oauthAuthorizeUrl: oauthSession.oauthAuthorizeUrl,
   };
-  await writeData(data);
-  return redirectToApp(request, "Instagram connected");
+  await writeData(data, stateId);
+  return redirectToApp(request, "Instagram connected", [
+    buildCookie(
+      sessionCookieName,
+      signCookieValue({
+        stateId,
+        instagramUserId: userId,
+        signedInAt: new Date().toISOString(),
+      }),
+      60 * 60 * 24 * 60,
+    ),
+    clearCookie(oauthCookieName),
+  ]);
 }
 
-async function disconnectInstagram() {
-  const data = await readData();
+async function disconnectInstagram(request: Request) {
+  const stateId = getRequestStateId(request);
+  const data = await readData(stateId);
   data.integration = {
     oauthState: undefined,
     oauthStartedAt: undefined,
@@ -361,8 +391,8 @@ async function disconnectInstagram() {
     oauthAuthorizeUrl: undefined,
     lastOAuthError: undefined,
   };
-  await writeData(data);
-  return json(200, { ok: true });
+  await writeData(data, stateId);
+  return json(200, { ok: true }, [clearCookie(sessionCookieName)]);
 }
 
 function verifyWebhook(requestUrl: URL) {
@@ -386,9 +416,10 @@ async function handleInstagramWebhook(request: Request) {
 
   const body = JSON.parse(rawBody.toString("utf8")) as unknown;
   const events = extractInstagramWebhookEvents(body);
-  const data = await readData();
 
   for (const event of events) {
+    const stateId = event.accountId ? accountStateId(event.accountId) : defaultStateId;
+    const data = await readData(stateId);
     const matchedRule = findMatchingRule(event.text, data.rules, event.mediaId);
     const dm = matchedRule ? composeDm(matchedRule) : "";
     const entry: Activity = {
@@ -413,9 +444,9 @@ async function handleInstagramWebhook(request: Request) {
     }
 
     data.activity = [entry, ...data.activity].slice(0, 50);
+    await writeData(data, stateId);
   }
 
-  await writeData(data);
   return json(200, { ok: true, events: events.length });
 }
 
@@ -518,6 +549,8 @@ function extractInstagramWebhookEvents(body: unknown): InstagramWebhookEvent[] {
       continue;
     }
 
+    const accountId = stringFrom(entry.id);
+
     if (Array.isArray(entry.changes)) {
       for (const change of entry.changes) {
         if (!isRecord(change)) {
@@ -525,7 +558,7 @@ function extractInstagramWebhookEvents(body: unknown): InstagramWebhookEvent[] {
         }
 
         if (change.field === "comments" || change.field === "mentions") {
-          const event = webhookEventFromChange(change);
+          const event = webhookEventFromChange(change, accountId);
           if (event) {
             events.push(event);
           }
@@ -535,7 +568,7 @@ function extractInstagramWebhookEvents(body: unknown): InstagramWebhookEvent[] {
 
     if (Array.isArray(entry.messaging)) {
       for (const messageEvent of entry.messaging) {
-        const event = webhookEventFromMessaging(messageEvent);
+        const event = webhookEventFromMessaging(messageEvent, accountId);
         if (event) {
           events.push(event);
         }
@@ -546,7 +579,7 @@ function extractInstagramWebhookEvents(body: unknown): InstagramWebhookEvent[] {
   return events;
 }
 
-function webhookEventFromChange(change: Record<string, unknown>) {
+function webhookEventFromChange(change: Record<string, unknown>, accountId?: string) {
   const value = change.value;
   if (!isRecord(value)) {
     return null;
@@ -567,6 +600,7 @@ function webhookEventFromChange(change: Record<string, unknown>) {
 
   return {
     id: commentId || stringFrom(value.mention_id) || randomUUID(),
+    accountId,
     kind: change.field === "mentions" ? "mention" as const : "comment" as const,
     text: textValue,
     mediaId: mediaId || undefined,
@@ -576,7 +610,7 @@ function webhookEventFromChange(change: Record<string, unknown>) {
   };
 }
 
-function webhookEventFromMessaging(messageEvent: unknown) {
+function webhookEventFromMessaging(messageEvent: unknown, accountId?: string) {
   if (!isRecord(messageEvent)) {
     return null;
   }
@@ -597,6 +631,7 @@ function webhookEventFromMessaging(messageEvent: unknown) {
 
   return {
     id: messageId || randomUUID(),
+    accountId,
     kind: "message" as const,
     text: textValue,
     replyTarget: { type: "message" as const, senderId },
@@ -645,8 +680,8 @@ async function exchangeForLongLivedToken(accessToken: string) {
   };
 }
 
-async function handleInstagramMedia() {
-  const data = await readData();
+async function handleInstagramMedia(request: Request) {
+  const data = await readData(getRequestStateId(request));
   const accessToken = getAccessToken(data);
 
   if (!accessToken) {
@@ -709,10 +744,10 @@ function getOAuthRedirectUri(request: Request) {
   return `${proto}://${host}/api/auth/instagram/callback`;
 }
 
-function redirectToApp(request: Request, message: string) {
+function redirectToApp(request: Request, message: string, cookies: string[] = []) {
   const url = new URL("/", request.url);
   url.searchParams.set("instagram", message);
-  return Response.redirect(url, 302);
+  return redirect(url.toString(), cookies);
 }
 
 function getInstagramAppId() {
@@ -721,6 +756,93 @@ function getInstagramAppId() {
 
 function getAccessToken(data: DataFile) {
   return data.integration?.accessToken ?? process.env.INSTAGRAM_ACCESS_TOKEN;
+}
+
+function getRequestStateId(request: Request) {
+  const session = readSignedCookie<{ stateId?: string }>(request, sessionCookieName);
+  return session?.stateId || defaultStateId;
+}
+
+function accountStateId(instagramUserId: string) {
+  return instagramUserId ? `ig:${instagramUserId}` : defaultStateId;
+}
+
+function readSignedCookie<T>(request: Request, name: string): T | null {
+  const value = getCookie(request, name);
+  if (!value) {
+    return null;
+  }
+
+  const [payload, signature] = value.split(".");
+  if (!payload || !signature) {
+    return null;
+  }
+
+  const expected = signValue(payload);
+  const actualBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  if (
+    actualBuffer.length !== expectedBuffer.length ||
+    !timingSafeEqual(actualBuffer, expectedBuffer)
+  ) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as T;
+  } catch {
+    return null;
+  }
+}
+
+function signCookieValue(payload: Record<string, unknown>) {
+  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${encoded}.${signValue(encoded)}`;
+}
+
+function signValue(value: string) {
+  return createHmac("sha256", cookieSecret()).update(value).digest("base64url");
+}
+
+function cookieSecret() {
+  return (
+    process.env.APP_SESSION_SECRET ??
+    process.env.APP_ENCRYPTION_KEY ??
+    process.env.INSTAGRAM_APP_SECRET ??
+    "museinbox-local-dev-secret"
+  );
+}
+
+function getCookie(request: Request, name: string) {
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  for (const cookie of cookieHeader.split(";")) {
+    const [key, ...valueParts] = cookie.trim().split("=");
+    if (key === name) {
+      return valueParts.join("=");
+    }
+  }
+
+  return "";
+}
+
+function buildCookie(name: string, value: string, maxAgeSeconds: number) {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `${name}=${value}; Path=/; Max-Age=${maxAgeSeconds}; HttpOnly; SameSite=Lax${secure}`;
+}
+
+function clearCookie(name: string) {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure}`;
+}
+
+function redirect(url: string, cookies: string[] = []) {
+  const headers = new Headers();
+  headers.set("Location", url);
+  for (const cookie of cookies) {
+    headers.append("Set-Cookie", cookie);
+  }
+
+  return new Response(null, { status: 302, headers });
 }
 
 function requiredEnv(key: string) {
@@ -763,45 +885,42 @@ function validateDraft(draft: DraftRule) {
   }
 }
 
-async function readData(): Promise<DataFile> {
+async function readData(stateId = defaultStateId): Promise<DataFile> {
   if (hasSupabaseConfig()) {
-    return readSupabaseData();
+    return readSupabaseData(stateId);
   }
 
   await mkdir(dataDirectory, { recursive: true });
+  const localDataPath = localDataPathForState(stateId);
 
-  if (!existsSync(dataPath)) {
+  if (!existsSync(localDataPath)) {
     const initialData = { rules: starterRules, activity: [], integration: {} };
-    await writeData(initialData);
+    await writeData(initialData, stateId);
     return initialData;
   }
 
-  const file = await readFile(dataPath, "utf8");
+  const file = await readFile(localDataPath, "utf8");
   const data = JSON.parse(file) as Partial<DataFile>;
-  return {
-    rules: Array.isArray(data.rules) ? data.rules : starterRules,
-    activity: Array.isArray(data.activity) ? data.activity : [],
-    integration: isRecord(data.integration) ? data.integration : {},
-  };
+  return normalizeData(data);
 }
 
-async function writeData(data: DataFile) {
+async function writeData(data: DataFile, stateId = defaultStateId) {
   if (hasSupabaseConfig()) {
-    await writeSupabaseData(data);
+    await writeSupabaseData(data, stateId);
     return;
   }
 
   await mkdir(dataDirectory, { recursive: true });
-  await writeFile(dataPath, JSON.stringify(data, null, 2));
+  await writeFile(localDataPathForState(stateId), JSON.stringify(data, null, 2));
 }
 
 function hasSupabaseConfig() {
   return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
-async function readSupabaseData(): Promise<DataFile> {
+async function readSupabaseData(stateId: string): Promise<DataFile> {
   const url = supabaseRestUrl();
-  url.searchParams.set("id", `eq.${supabaseStateId}`);
+  url.searchParams.set("id", `eq.${stateId}`);
   url.searchParams.set("select", "data");
   url.searchParams.set("limit", "1");
 
@@ -818,14 +937,14 @@ async function readSupabaseData(): Promise<DataFile> {
   const data = rows[0]?.data;
   if (!isRecord(data)) {
     const initialData = normalizeData({});
-    await writeSupabaseData(initialData);
+    await writeSupabaseData(initialData, stateId);
     return initialData;
   }
 
   return normalizeData(decryptData(data));
 }
 
-async function writeSupabaseData(data: DataFile) {
+async function writeSupabaseData(data: DataFile, stateId: string) {
   const response = await fetch(supabaseRestUrl(), {
     method: "POST",
     headers: {
@@ -833,7 +952,7 @@ async function writeSupabaseData(data: DataFile) {
       Prefer: "resolution=merge-duplicates,return=minimal",
     },
     body: JSON.stringify({
-      id: supabaseStateId,
+      id: stateId,
       data: encryptData(data),
       updated_at: new Date().toISOString(),
     }),
@@ -846,6 +965,14 @@ async function writeSupabaseData(data: DataFile) {
 
 function supabaseRestUrl() {
   return new URL(`/rest/v1/${supabaseStateTable}`, requiredEnv("SUPABASE_URL"));
+}
+
+function localDataPathForState(stateId: string) {
+  if (stateId === defaultStateId) {
+    return dataPath;
+  }
+
+  return path.join(dataDirectory, `data-${stateId.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`);
 }
 
 function supabaseHeaders() {
@@ -947,8 +1074,13 @@ async function readJson<T>(request: Request): Promise<T> {
   return textBody ? (JSON.parse(textBody) as T) : (emptyDraft as T);
 }
 
-function json(statusCode: number, payload: unknown) {
-  return Response.json(payload, { status: statusCode });
+function json(statusCode: number, payload: unknown, cookies: string[] = []) {
+  const headers = new Headers();
+  for (const cookie of cookies) {
+    headers.append("Set-Cookie", cookie);
+  }
+
+  return Response.json(payload, { status: statusCode, headers });
 }
 
 function text(statusCode: number, payload: string) {

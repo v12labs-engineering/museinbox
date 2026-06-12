@@ -470,7 +470,7 @@ function App({ currentView }: AppProps) {
             ) : (
               <a className="primary-action link-action" href="/api/auth/instagram/start">
                 <InstagramButtonIcon />
-                Connect Instagram
+                Continue with Instagram
               </a>
             )}
           </div>
@@ -523,7 +523,9 @@ function App({ currentView }: AppProps) {
               {mediaLoading ? (
                 <p className="empty-copy">Fetching Instagram content...</p>
               ) : media.length === 0 ? (
-                <p className="empty-copy">Connect Instagram to load posts and reels.</p>
+                <p className="empty-copy">
+                  Continue with Instagram to load posts and reels.
+                </p>
               ) : (
                 media.map((item) => (
                   <article
@@ -865,7 +867,7 @@ function App({ currentView }: AppProps) {
             ) : (
               <a className="primary-action link-action" href="/api/auth/instagram/start">
                 <InstagramButtonIcon />
-                Connect Instagram
+                Continue with Instagram
               </a>
             )}
           </div>
