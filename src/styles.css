@@ -58,15 +58,71 @@ button:disabled {
   background: oklch(99% 0.004 248);
 }
 
-.brand-mark {
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 8px;
-  background: oklch(34% 0.09 172);
-  color: white;
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 48px;
+  padding: 4px 2px;
+  color: oklch(20% 0.027 248);
+}
+
+.brand-lockup:hover {
+  color: oklch(20% 0.027 248);
+}
+
+.brand-lockup strong,
+.brand-lockup small {
+  display: block;
+  line-height: 1.1;
+}
+
+.brand-lockup strong {
+  font-size: 1.08rem;
   font-weight: 900;
+}
+
+.brand-lockup small {
+  margin-top: 4px;
+  color: oklch(48% 0.035 248);
+  font-size: 0.74rem;
+  font-weight: 780;
+}
+
+.brand-logo {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  box-shadow:
+    0 14px 30px oklch(35% 0.105 172 / 18%),
+    inset 0 0 0 1px oklch(100% 0 0 / 18%);
+}
+
+.brand-logo svg {
+  display: block;
+  width: 44px;
+  height: 44px;
+}
+
+.logo-base {
+  fill: oklch(34% 0.11 172);
+}
+
+.logo-bubble {
+  fill: oklch(96% 0.025 155);
+}
+
+.logo-line {
+  stroke: oklch(34% 0.11 172);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.logo-signal {
+  fill: oklch(77% 0.15 74);
 }
 
 .app-sidebar nav {
@@ -88,6 +144,21 @@ button:disabled {
   color: oklch(38% 0.028 248);
   font-weight: 800;
   text-align: left;
+}
+
+.app-sidebar .brand-lockup {
+  gap: 11px;
+  min-height: 48px;
+  padding: 4px 2px;
+  border-radius: 8px;
+  background: transparent;
+  color: oklch(20% 0.027 248);
+  font-weight: 900;
+}
+
+.app-sidebar .brand-lockup:hover {
+  background: transparent;
+  color: oklch(20% 0.027 248);
 }
 
 .app-sidebar button.active,
@@ -1039,6 +1110,10 @@ textarea:focus {
     display: none;
   }
 
+  .brand-lockup {
+    min-width: 176px;
+  }
+
   .app-main {
     padding: 16px;
   }
@@ -1085,6 +1160,16 @@ textarea:focus {
   .app-sidebar button,
   .app-sidebar a {
     font-size: 0;
+  }
+
+  .brand-lockup {
+    min-width: 44px;
+    width: 44px;
+    padding: 0;
+  }
+
+  .brand-lockup span:not(.brand-logo) {
+    display: none;
   }
 
   .selected-preview {

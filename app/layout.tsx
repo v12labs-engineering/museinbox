@@ -4,6 +4,9 @@ import "../src/styles.css";
 export const metadata: Metadata = {
   title: "MuseInbox",
   description: "Local Instagram comment automation dashboard",
+  icons: {
+    icon: "/museinbox-logo.svg",
+  },
 };
 
 export default function RootLayout({

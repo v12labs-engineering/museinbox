@@ -78,6 +78,23 @@ function formatTime(value: string) {
   }).format(new Date(value));
 }
 
+function MuseInboxLogo() {
+  return (
+    <span className="brand-logo" aria-hidden="true">
+      <svg viewBox="0 0 48 48" role="img">
+        <rect className="logo-base" width="48" height="48" rx="10" />
+        <path
+          className="logo-bubble"
+          d="M12.5 17.2c0-3.18 2.58-5.75 5.75-5.75h13.5c3.17 0 5.75 2.57 5.75 5.75v8.55c0 3.18-2.58 5.75-5.75 5.75H23.3l-7.05 5.8v-6.05a5.76 5.76 0 0 1-3.75-5.4v-8.65Z"
+        />
+        <path className="logo-line" d="M18.5 21.5h14" />
+        <path className="logo-line" d="M18.5 27.5h8.5" />
+        <circle className="logo-signal" cx="34.5" cy="14" r="4.25" />
+      </svg>
+    </span>
+  );
+}
+
 function App({ currentView }: AppProps) {
   const [rules, setRules] = useState<Rule[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
@@ -352,7 +369,13 @@ function App({ currentView }: AppProps) {
   return (
     <main className="app-frame">
       <aside className="app-sidebar" aria-label="MuseInbox navigation">
-        <div className="brand-mark">M</div>
+        <Link className="brand-lockup" href="/" aria-label="MuseInbox home">
+          <MuseInboxLogo />
+          <span>
+            <strong>MuseInbox</strong>
+            <small>Instagram automations</small>
+          </span>
+        </Link>
         <nav>
           <Link
             className={currentView === "dashboard" ? "active" : ""}
