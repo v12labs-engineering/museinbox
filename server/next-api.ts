@@ -455,7 +455,7 @@ async function handleOAuthCallback(
     oauthAuthorizeUrl: oauthSession.oauthAuthorizeUrl,
   };
   await writeData(data, stateId);
-  return redirectToApp(request, "Instagram connected. Connect Facebook in settings to enable comment-to-DM private replies.", [
+  return redirectToApp(request, "Instagram connected. Private replies are ready when comment permissions are granted.", [
     buildCookie(
       sessionCookieName,
       signCookieValue({
@@ -606,51 +606,21 @@ async function sendPrivateReply(
     return { ok: true, status: "dry_run" as const };
   }
 
-  const pageId = getPageId(data);
-  const pageAccessToken = getPageAccessToken(data);
-  if (pageId && pageAccessToken) {
-    const body = new URLSearchParams({
-      recipient: JSON.stringify({ comment_id: commentId }),
-      message: JSON.stringify({ text: message }),
-      access_token: pageAccessToken,
-    });
-    const result = await fetch(
-      `https://graph.facebook.com/${getGraphVersion()}/${encodeURIComponent(pageId)}/messages`,
-      {
-        method: "POST",
-        body,
-      },
-    );
-
-    if (!result.ok) {
-      const pageMessageError = await result.text();
-      const fallback = await sendCommentPrivateReply(commentId, message, pageAccessToken);
-      if (fallback.ok) {
-        return fallback;
-      }
-
-      return {
-        ok: false,
-        error: `${pageMessageError}\n${fallback.error}`,
-      };
-    }
-
-    return { ok: true, status: "sent" as const };
-  }
-
-  const accessToken = getAccessToken(data);
-  if (accessToken) {
-    return sendCommentPrivateReply(commentId, message, accessToken);
+  const accessToken = getInstagramAccessToken(data);
+  const instagramUserId = getInstagramUserId(data);
+  if (accessToken && instagramUserId) {
+    return sendInstagramPrivateReply(instagramUserId, commentId, message, accessToken);
   }
 
   return {
     ok: false,
     error:
-      "Private replies require a connected Facebook Page. Open Settings and connect Facebook Page access before sending comment-to-DM replies.",
+      "Private replies require a connected Instagram professional account. Reconnect Instagram before sending comment-to-DM replies.",
   };
 }
 
-async function sendCommentPrivateReply(
+async function sendInstagramPrivateReply(
+  instagramUserId: string,
   commentId: string,
   message: string,
   accessToken: string,
@@ -658,15 +628,18 @@ async function sendCommentPrivateReply(
   | { ok: true; status: "sent"; error?: undefined }
   | { ok: false; error: string; status?: undefined }
 > {
-  const body = new URLSearchParams({
-    message,
-    access_token: accessToken,
-  });
   const result = await fetch(
-    `https://graph.facebook.com/${getGraphVersion()}/${encodeURIComponent(commentId)}/private_replies`,
+    `https://graph.instagram.com/${getGraphVersion()}/${encodeURIComponent(instagramUserId)}/messages`,
     {
       method: "POST",
-      body,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        recipient: { comment_id: commentId },
+        message: { text: message },
+      }),
     },
   );
 
@@ -1086,7 +1059,19 @@ async function syncInstagramComments(request: Request) {
   let failed = 0;
   const errors: string[] = [];
   for (const mediaId of mediaIds) {
-    const comments = await fetchInstagramComments(readContext, mediaId);
+    let comments: InstagramCommentItem[];
+    try {
+      comments = await fetchInstagramComments(readContext, mediaId);
+    } catch (error) {
+      const message = messageFromUnknown(error);
+      const status = isExpiredMetaTokenError(message) ? 401 : 502;
+      return json(status, {
+        error: isExpiredMetaTokenError(message)
+          ? "Instagram connection expired. Reconnect Instagram, then check comments again."
+          : message,
+      });
+    }
+
     for (const comment of comments) {
       checked += 1;
       if (comment.parentId || data.processedCommentIds?.includes(comment.id)) {
@@ -1273,11 +1258,18 @@ function addFacebookLoginConfig(authUrl: string, provider: "instagram" | "facebo
 
 function getAccessToken(data: DataFile) {
   return (
-    data.integration?.accessToken ??
+    getInstagramAccessToken(data) ??
     data.integration?.pageAccessToken ??
-    process.env.INSTAGRAM_ACCESS_TOKEN ??
     process.env.FACEBOOK_PAGE_ACCESS_TOKEN
   );
+}
+
+function getInstagramAccessToken(data: DataFile) {
+  return data.integration?.accessToken ?? process.env.INSTAGRAM_ACCESS_TOKEN;
+}
+
+function getInstagramUserId(data: DataFile) {
+  return data.integration?.userId ?? process.env.INSTAGRAM_USER_ID;
 }
 
 function getInstagramReadContext(data: DataFile): InstagramReadContext | null {
@@ -1319,7 +1311,7 @@ function getPageAccessToken(data: DataFile) {
 }
 
 function canSendPrivateReplies(data: DataFile) {
-  return Boolean(getPageId(data) && getPageAccessToken(data));
+  return Boolean(getInstagramAccessToken(data) && getInstagramUserId(data));
 }
 
 function isMetaConnected(data: DataFile) {
@@ -1329,34 +1321,24 @@ function isMetaConnected(data: DataFile) {
 function privateReplyReadiness(data: DataFile) {
   const checks = [
     {
-      key: "facebookAppId",
-      label: "Facebook app ID",
-      ready: Boolean(getFacebookAppId()),
+      key: "instagramAppId",
+      label: "Instagram app ID",
+      ready: Boolean(getInstagramAppId()),
     },
     {
-      key: "facebookAppSecret",
-      label: "Facebook app secret",
-      ready: Boolean(getFacebookAppSecret()),
+      key: "instagramAppSecret",
+      label: "Instagram app secret",
+      ready: Boolean(process.env.INSTAGRAM_APP_SECRET),
     },
     {
-      key: "facebookLoginConfigId",
-      label: "Facebook login configuration",
-      ready: Boolean(getFacebookLoginConfigId()),
-    },
-    {
-      key: "pageId",
-      label: "Connected Facebook Page",
-      ready: Boolean(getPageId(data)),
-    },
-    {
-      key: "pageAccessToken",
-      label: "Facebook Page access",
-      ready: Boolean(getPageAccessToken(data)),
+      key: "instagramAccessToken",
+      label: "Instagram access",
+      ready: Boolean(getInstagramAccessToken(data)),
     },
     {
       key: "instagramUserId",
       label: "Instagram professional account",
-      ready: Boolean(data.integration?.userId ?? process.env.INSTAGRAM_USER_ID),
+      ready: Boolean(getInstagramUserId(data)),
     },
   ];
 
@@ -1451,6 +1433,18 @@ function buildCookie(name: string, value: string, maxAgeSeconds: number) {
 function clearCookie(name: string) {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   return `${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure}`;
+}
+
+function messageFromUnknown(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isExpiredMetaTokenError(message: string) {
+  return (
+    message.includes('"code":190') ||
+    message.includes("code 190") ||
+    /expired|failed to decrypt|invalid oauth access token/i.test(message)
+  );
 }
 
 function redirect(url: string, cookies: string[] = []) {

@@ -71,9 +71,7 @@ import {
 type InstagramStatus = {
   webhookPath: string;
   oauthStartPath: string;
-  facebookOAuthStartPath: string;
   oauthCallbackPath: string;
-  facebookOAuthCallbackPath: string;
   graphVersion: string;
   hasAccessToken: boolean;
   hasPageAccess: boolean;
@@ -89,11 +87,8 @@ type InstagramStatus = {
   canSendPrivateReplies: boolean;
   permissions: string[];
   hasAppId: boolean;
-  hasFacebookAppId: boolean;
-  hasFacebookLoginConfigId: boolean;
   hasVerifyToken: boolean;
   hasAppSecret: boolean;
-  hasFacebookAppSecret: boolean;
   dryRun: boolean;
 };
 
@@ -1413,24 +1408,8 @@ function SettingsView({
       ready: Boolean(status?.hasAppSecret),
     },
     {
-      label: "Facebook app ID",
-      ready: Boolean(status?.hasFacebookAppId),
-    },
-    {
-      label: "Facebook app secret",
-      ready: Boolean(status?.hasFacebookAppSecret),
-    },
-    {
-      label: "Facebook login configuration",
-      ready: Boolean(status?.hasFacebookLoginConfigId),
-    },
-    {
-      label: "Connected Facebook Page",
-      ready: Boolean(status?.pageId),
-    },
-    {
-      label: "Facebook Page access",
-      ready: Boolean(status?.hasPageAccess),
+      label: "Instagram access",
+      ready: Boolean(status?.hasAccessToken),
     },
     {
       label: "Instagram professional account",
@@ -1442,27 +1421,6 @@ function SettingsView({
     },
   ];
   const permissions = status?.permissions?.length ? status.permissions : [];
-  const facebookAppConfigured = Boolean(
-    status?.hasFacebookAppId &&
-      status.hasFacebookAppSecret &&
-      status.hasFacebookLoginConfigId,
-  );
-  const facebookActionLabel = facebookAppConfigured
-    ? "Connect Facebook Page"
-    : "Facebook credentials required";
-  const facebookAction = facebookAppConfigured ? (
-    <Button asChild type="button" variant={connected ? "outline" : "default"}>
-      <a href={status?.facebookOAuthStartPath ?? "/api/auth/facebook/start"}>
-        <MessageCircle className="size-4" />
-        {facebookActionLabel}
-      </a>
-    </Button>
-  ) : (
-    <Button type="button" variant="outline" disabled>
-      <MessageCircle className="size-4" />
-      {facebookActionLabel}
-    </Button>
-  );
 
   return (
     <div className="grid max-w-5xl gap-4">
@@ -1521,12 +1479,12 @@ function SettingsView({
                 <h3 className="mt-2 text-lg font-black">
                   {status?.canSendPrivateReplies
                     ? "Private replies are ready"
-                    : "Facebook Page access needed"}
+                    : "Reconnect Instagram"}
                 </h3>
                 <p className="mt-1 text-sm font-medium">
                   {status?.canSendPrivateReplies
-                    ? `Sending through ${status.pageName ?? "the connected Facebook Page"}.`
-                    : "Meta requires the Instagram account's connected Facebook Page before MuseInbox can send private DM replies from comments."}
+                    ? "Sending through the connected Instagram professional account."
+                    : "MuseInbox needs a valid Instagram connection with comment permissions before it can send private replies from comments."}
                 </p>
               </div>
               <Badge
@@ -1536,21 +1494,18 @@ function SettingsView({
                     : "bg-amber-100 text-amber-800 hover:bg-amber-100"
                 }
               >
-                {status?.canSendPrivateReplies ? "DM ready" : "Needs Page"}
+                {status?.canSendPrivateReplies ? "DM ready" : "Needs Instagram"}
               </Badge>
             </div>
           </div>
 
-          {!facebookAppConfigured ? (
+          {!status?.canSendPrivateReplies ? (
             <Alert className="border-amber-200 bg-amber-50 text-amber-950">
               <AlertTriangle className="size-4" />
-              <AlertTitle>Facebook app credentials are missing</AlertTitle>
+              <AlertTitle>Instagram connection needs attention</AlertTitle>
               <AlertDescription>
-                Add <code>FACEBOOK_APP_ID</code>,{" "}
-                <code>FACEBOOK_APP_SECRET</code>, and{" "}
-                <code>FACEBOOK_LOGIN_CONFIG_ID</code>, then reconnect the
-                Facebook Page. Use <code>FACEBOOK_OAUTH_REDIRECT_URI</code> for
-                the callback URL.
+                Reconnect Instagram with <code>instagram_business_basic</code>{" "}
+                and <code>instagram_business_manage_comments</code> permissions.
               </AlertDescription>
             </Alert>
           ) : null}
@@ -1558,22 +1513,24 @@ function SettingsView({
           <div className="flex flex-col gap-2 sm:flex-row">
             {connected ? (
               <>
-                {facebookAction}
+                <Button asChild type="button" variant="outline">
+                  <a href={status?.oauthStartPath ?? "/api/auth/instagram/start"}>
+                    <InstagramButtonIcon />
+                    Reconnect Instagram
+                  </a>
+                </Button>
                 <Button type="button" variant="destructive" onClick={onDisconnect}>
                   <Unplug className="size-4" />
                   Disconnect Instagram
                 </Button>
               </>
             ) : (
-              <>
-                {facebookAction}
-                <Button asChild variant="outline">
-                  <Link href="/login">
-                    <InstagramButtonIcon />
-                    Continue with Instagram
-                  </Link>
-                </Button>
-              </>
+              <Button asChild>
+                <Link href="/login">
+                  <InstagramButtonIcon />
+                  Connect Instagram
+                </Link>
+              </Button>
             )}
           </div>
         </CardContent>
