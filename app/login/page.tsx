@@ -39,21 +39,34 @@ export default function LoginPage() {
             </Link>
 
             <Badge className="mb-4 w-max bg-primary/10 text-primary hover:bg-primary/10">
-              Instagram signup
+              Meta signup
             </Badge>
             <h1 className="max-w-2xl text-4xl font-black leading-[0.98] tracking-tight text-foreground sm:text-5xl lg:text-6xl">
               Run comment automations from your Instagram account.
             </h1>
             <p className="mt-5 max-w-xl text-base font-medium leading-7 text-muted-foreground">
-              Continue with a Business or Creator account. MuseInbox will create
-              or find your workspace, connect your posts and reels, and take you
-              back to the dashboard.
+              Connect the Facebook Page that owns your Business or Creator
+              Instagram account. MuseInbox needs that Page connection to send
+              private DM replies when someone comments.
             </p>
 
             <Button
               asChild
               className="mt-8 h-12 w-max bg-[linear-gradient(135deg,#f77737,#e1306c_55%,#833ab4)] px-5 !text-white shadow-[0_16px_40px_rgba(225,48,108,0.24)] hover:opacity-95"
               size="lg"
+            >
+              <a href="/api/auth/facebook/start">
+                <MessageCircle className="size-4" />
+                Connect Facebook Page
+                <ArrowRight className="size-4" />
+              </a>
+            </Button>
+
+            <Button
+              asChild
+              className="mt-3 h-11 w-max"
+              size="lg"
+              variant="outline"
             >
               <a href="/api/auth/instagram/start">
                 <InstagramButtonIcon />
@@ -65,7 +78,7 @@ export default function LoginPage() {
             <div className="mt-5 flex flex-wrap gap-2 text-sm font-bold text-muted-foreground">
               <span className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-2">
                 <ShieldCheck className="size-4 text-primary" />
-                Official Instagram permission flow
+                Official Meta permission flow
               </span>
               <span className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-2">
                 <LockKeyhole className="size-4 text-primary" />

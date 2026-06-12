@@ -71,17 +71,29 @@ import {
 type InstagramStatus = {
   webhookPath: string;
   oauthStartPath: string;
+  facebookOAuthStartPath: string;
   oauthCallbackPath: string;
+  facebookOAuthCallbackPath: string;
   graphVersion: string;
   hasAccessToken: boolean;
+  hasPageAccess: boolean;
+  connected: boolean;
   tokenSource: "oauth" | "env";
   connectedAt?: string;
   expiresAt?: string;
   instagramUserId?: string;
+  facebookUserId?: string;
+  loginProvider?: "instagram" | "facebook";
+  pageId?: string;
+  pageName?: string;
+  canSendPrivateReplies: boolean;
   permissions: string[];
   hasAppId: boolean;
+  hasFacebookAppId: boolean;
+  hasFacebookLoginConfigId: boolean;
   hasVerifyToken: boolean;
   hasAppSecret: boolean;
+  hasFacebookAppSecret: boolean;
   dryRun: boolean;
 };
 
@@ -238,7 +250,7 @@ function App({ currentView }: AppProps) {
         return nextRules[0] ? ruleToDraft(nextRules[0]) : emptyDraft;
       });
       setError("");
-      if (nextStatus.hasAccessToken) {
+      if (nextStatus.connected) {
         await loadInstagramMedia();
       } else {
         setMedia([]);
@@ -384,7 +396,12 @@ function App({ currentView }: AppProps) {
     }
 
     try {
-      const result = await apiRequest<{ checked: number; acted: number }>(
+      const result = await apiRequest<{
+        checked: number;
+        acted: number;
+        failed?: number;
+        errors?: string[];
+      }>(
         "/api/instagram/comments/sync",
         {
           method: "POST",
@@ -392,12 +409,26 @@ function App({ currentView }: AppProps) {
         },
       );
       await loadDashboard();
-      setNotice(
-        result.acted > 0
-          ? `Checked ${result.checked} comments and handled ${result.acted}.`
-          : `Checked ${result.checked} comments. No new matching comments found.`,
-      );
-      setError("");
+      if ((result.failed ?? 0) > 0) {
+        const firstError = result.errors?.[0]
+          ? ` Instagram said: ${readableInstagramError(result.errors[0])}`
+          : "";
+        setError(
+          `Checked ${result.checked} comments. ${result.failed} matched, but Instagram rejected the DM send.${firstError}`,
+        );
+        setNotice(
+          result.acted > 0
+            ? `Checked ${result.checked} comments and sent ${result.acted}.`
+            : "",
+        );
+      } else {
+        setNotice(
+          result.acted > 0
+            ? `Checked ${result.checked} comments and sent ${result.acted}.`
+            : `Checked ${result.checked} comments. No new matching comments found.`,
+        );
+        setError("");
+      }
     } catch (syncError) {
       setError(messageFromError(syncError));
     }
@@ -476,7 +507,7 @@ function App({ currentView }: AppProps) {
     settings: "Check Instagram connection health and local reply mode.",
   }[currentView];
   const isEditingRule = Boolean(selectedRule);
-  const connectionReady = Boolean(status?.hasAccessToken);
+  const connectionReady = Boolean(status?.connected);
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(253,186,116,0.28),transparent_34%),linear-gradient(180deg,#fff7f4_0%,#fff_38%,#fafafa_100%)] text-foreground">
@@ -579,7 +610,7 @@ function App({ currentView }: AppProps) {
                   "grid min-w-0 gap-4",
                   currentView === "dashboard"
                     ? "xl:grid-cols-[minmax(280px,0.82fr)_minmax(0,1.45fr)]"
-                    : "xl:grid-cols-[minmax(0,1fr)_360px]",
+                    : "2xl:grid-cols-[minmax(0,1fr)_minmax(380px,440px)]",
                 )}
               >
                 {currentView === "dashboard" ? (
@@ -659,9 +690,9 @@ function DesktopSidebar({
   onDisconnect: () => void;
 }) {
   return (
-    <aside className="sticky top-0 hidden h-screen min-w-0 border-r border-border/70 bg-background/86 p-4 backdrop-blur-xl lg:flex lg:flex-col">
+    <aside className="sticky top-0 hidden h-screen min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] border-r border-border/70 bg-background/86 p-4 backdrop-blur-xl lg:grid">
       <BrandLockup subtitle="Business or creator" />
-      <nav className="mt-7 grid gap-1">
+      <nav className="mt-7 grid content-start gap-1">
         {navItems.map((item) => (
           <NavLink
             active={currentView === item.view}
@@ -672,7 +703,7 @@ function DesktopSidebar({
           />
         ))}
       </nav>
-      <Card className="mt-auto overflow-hidden border-border/80 bg-card/82 shadow-sm">
+      <Card className="self-end overflow-hidden border-border/80 bg-card/82 shadow-sm">
         <CardContent className="grid gap-3 p-3">
           <div className="flex items-center gap-3">
             <span
@@ -1226,8 +1257,8 @@ function PreviewAndActivity({
   sampleComment: string;
 }) {
   return (
-    <aside className="grid min-w-0 gap-4">
-      <Card className="border-border/80 bg-card/92 shadow-sm">
+    <aside className="grid min-w-0 max-w-full content-start gap-4 overflow-hidden">
+      <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92 shadow-sm">
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -1256,9 +1287,11 @@ function PreviewAndActivity({
                   Matched
                 </Badge>
                 <h3 className="font-black">{matchedRule.name}</h3>
-                <div className="mt-3 flex gap-2 rounded-xl bg-background p-3 text-sm text-foreground shadow-sm">
+                <div className="mt-3 flex min-w-0 gap-2 rounded-xl bg-background p-3 text-sm text-foreground shadow-sm">
                   <MessageCircle className="mt-0.5 size-4 shrink-0 text-primary" />
-                  <p className="whitespace-pre-wrap">{matchedDm}</p>
+                  <p className="min-w-0 whitespace-pre-wrap break-words">
+                    {matchedDm}
+                  </p>
                 </div>
               </>
             ) : (
@@ -1298,7 +1331,7 @@ function ActivityCard({
   compact?: boolean;
 }) {
   return (
-    <Card className="border-border/80 bg-card/92 shadow-sm">
+    <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92 shadow-sm">
       <CardHeader>
         <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
           Activity
@@ -1306,7 +1339,7 @@ function ActivityCard({
         <CardTitle>{compact ? "Recent" : "Recent comment matches"}</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className={cn("grid gap-3", compact && "max-h-[360px] overflow-auto pr-1")}>
+        <div className={cn("grid min-w-0 gap-3", compact && "max-h-[520px] overflow-auto pr-1")}>
           {activity.length === 0 ? (
             <EmptyState
               icon={MessageCircle}
@@ -1316,7 +1349,7 @@ function ActivityCard({
           ) : (
             activity.map((entry) => (
               <article
-                className="rounded-xl border border-border bg-background p-4"
+                className="min-w-0 rounded-xl border border-border bg-background p-4"
                 key={entry.id}
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1333,14 +1366,24 @@ function ActivityCard({
                     {entry.status.replace("_", " ")}
                   </Badge>
                 </div>
-                <p className="mt-3 rounded-lg bg-muted/55 p-3 text-sm font-semibold">
+                <p className="mt-3 rounded-lg bg-muted/55 p-3 text-sm font-semibold break-words">
                   “{entry.comment}”
                 </p>
-                <p className="mt-2 text-sm text-muted-foreground">{entry.dm}</p>
-                {entry.error ? (
-                  <p className="mt-2 text-sm font-semibold text-destructive">
-                    {entry.error}
+                <div className="mt-2 min-w-0 rounded-lg border border-border bg-background p-3">
+                  <p className="text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
+                    DM attempted
                   </p>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">
+                    {entry.dm}
+                  </p>
+                </div>
+                {entry.error ? (
+                  <div className="mt-2 min-w-0 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">
+                    <p className="font-black">Instagram rejected this DM.</p>
+                    <p className="mt-1 break-words font-medium">
+                      {readableInstagramError(entry.error)}
+                    </p>
+                  </div>
                 ) : null}
               </article>
             ))
@@ -1362,12 +1405,36 @@ function SettingsView({
 }) {
   const readiness = [
     {
-      label: "App ID",
+      label: "Instagram app ID",
       ready: Boolean(status?.hasAppId),
     },
     {
-      label: "App secret",
+      label: "Instagram app secret",
       ready: Boolean(status?.hasAppSecret),
+    },
+    {
+      label: "Facebook app ID",
+      ready: Boolean(status?.hasFacebookAppId),
+    },
+    {
+      label: "Facebook app secret",
+      ready: Boolean(status?.hasFacebookAppSecret),
+    },
+    {
+      label: "Facebook login configuration",
+      ready: Boolean(status?.hasFacebookLoginConfigId),
+    },
+    {
+      label: "Connected Facebook Page",
+      ready: Boolean(status?.pageId),
+    },
+    {
+      label: "Facebook Page access",
+      ready: Boolean(status?.hasPageAccess),
+    },
+    {
+      label: "Instagram professional account",
+      ready: Boolean(status?.instagramUserId),
     },
     {
       label: "Verify token",
@@ -1375,6 +1442,27 @@ function SettingsView({
     },
   ];
   const permissions = status?.permissions?.length ? status.permissions : [];
+  const facebookAppConfigured = Boolean(
+    status?.hasFacebookAppId &&
+      status.hasFacebookAppSecret &&
+      status.hasFacebookLoginConfigId,
+  );
+  const facebookActionLabel = facebookAppConfigured
+    ? "Connect Facebook Page"
+    : "Facebook credentials required";
+  const facebookAction = facebookAppConfigured ? (
+    <Button asChild type="button" variant={connected ? "outline" : "default"}>
+      <a href={status?.facebookOAuthStartPath ?? "/api/auth/facebook/start"}>
+        <MessageCircle className="size-4" />
+        {facebookActionLabel}
+      </a>
+    </Button>
+  ) : (
+    <Button type="button" variant="outline" disabled>
+      <MessageCircle className="size-4" />
+      {facebookActionLabel}
+    </Button>
+  );
 
   return (
     <div className="grid max-w-5xl gap-4">
@@ -1417,19 +1505,75 @@ function SettingsView({
             </p>
           </div>
 
+          <div
+            className={cn(
+              "rounded-xl border p-4",
+              status?.canSendPrivateReplies
+                ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                : "border-amber-200 bg-amber-50 text-amber-950",
+            )}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em]">
+                  Comment-to-DM readiness
+                </p>
+                <h3 className="mt-2 text-lg font-black">
+                  {status?.canSendPrivateReplies
+                    ? "Private replies are ready"
+                    : "Facebook Page access needed"}
+                </h3>
+                <p className="mt-1 text-sm font-medium">
+                  {status?.canSendPrivateReplies
+                    ? `Sending through ${status.pageName ?? "the connected Facebook Page"}.`
+                    : "Meta requires the Instagram account's connected Facebook Page before MuseInbox can send private DM replies from comments."}
+                </p>
+              </div>
+              <Badge
+                className={
+                  status?.canSendPrivateReplies
+                    ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100"
+                    : "bg-amber-100 text-amber-800 hover:bg-amber-100"
+                }
+              >
+                {status?.canSendPrivateReplies ? "DM ready" : "Needs Page"}
+              </Badge>
+            </div>
+          </div>
+
+          {!facebookAppConfigured ? (
+            <Alert className="border-amber-200 bg-amber-50 text-amber-950">
+              <AlertTriangle className="size-4" />
+              <AlertTitle>Facebook app credentials are missing</AlertTitle>
+              <AlertDescription>
+                Add <code>FACEBOOK_APP_ID</code>,{" "}
+                <code>FACEBOOK_APP_SECRET</code>, and{" "}
+                <code>FACEBOOK_LOGIN_CONFIG_ID</code>, then reconnect the
+                Facebook Page. Use <code>FACEBOOK_OAUTH_REDIRECT_URI</code> for
+                the callback URL.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
           <div className="flex flex-col gap-2 sm:flex-row">
             {connected ? (
-              <Button type="button" variant="destructive" onClick={onDisconnect}>
-                <Unplug className="size-4" />
-                Disconnect Instagram
-              </Button>
+              <>
+                {facebookAction}
+                <Button type="button" variant="destructive" onClick={onDisconnect}>
+                  <Unplug className="size-4" />
+                  Disconnect Instagram
+                </Button>
+              </>
             ) : (
-              <Button asChild>
-                <Link href="/login">
-                  <InstagramButtonIcon />
-                  Continue with Instagram
-                </Link>
-              </Button>
+              <>
+                {facebookAction}
+                <Button asChild variant="outline">
+                  <Link href="/login">
+                    <InstagramButtonIcon />
+                    Continue with Instagram
+                  </Link>
+                </Button>
+              </>
             )}
           </div>
         </CardContent>
@@ -1800,6 +1944,15 @@ async function apiRequest<T>(path: string, options: RequestInit = {}) {
 
 function messageFromError(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
+}
+
+function readableInstagramError(value: string) {
+  try {
+    const payload = JSON.parse(value) as { error?: { message?: string } };
+    return payload.error?.message ?? value;
+  } catch {
+    return value;
+  }
 }
 
 function mediaLabel(item: InstagramMediaItem) {
