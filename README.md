@@ -6,7 +6,7 @@ Local-first Instagram automation dashboard for creating simple rules like:
 - when someone comments anything, send this DM
 - preview which rule would match before connecting live events
 
-The current app supports Instagram OAuth, post/reel comment webhooks, mentions, and incoming message/story-reply style webhooks.
+The current app supports Instagram OAuth for Business and Creator accounts, post/reel comment webhooks, mentions, and incoming message/story-reply style webhooks.
 
 ## Development
 
@@ -30,6 +30,6 @@ Run `supabase/schema.sql` in the Supabase SQL editor, then set these environment
 
 When Supabase is configured, MuseInbox stores rules, activity, and Instagram OAuth state in Supabase. Instagram access tokens are encrypted before they are saved.
 
-Instagram login is also the account signup flow. After a user approves Instagram access, MuseInbox creates or finds a Supabase state row for that Instagram account and signs the browser into that account with an HTTP-only session cookie.
+Instagram login is also the account signup flow. After a Business or Creator account approves Instagram access, MuseInbox creates or finds a Supabase state row for that Instagram account and signs the browser into that account with an HTTP-only session cookie.
 
 Without Supabase variables, the app falls back to local JSON storage in `.museinbox/data.json`.

@@ -401,7 +401,7 @@ function App({ currentView }: AppProps) {
           <MuseInboxLogo />
           <span>
             <strong>MuseInbox</strong>
-            <small>Instagram automations</small>
+            <small>Business or creator</small>
           </span>
         </Link>
         <nav>
@@ -524,7 +524,8 @@ function App({ currentView }: AppProps) {
                 <p className="empty-copy">Fetching Instagram content...</p>
               ) : media.length === 0 ? (
                 <p className="empty-copy">
-                  Continue with Instagram to load posts and reels.
+                  Continue with a Business or Creator Instagram account to load posts
+                  and reels.
                 </p>
               ) : (
                 media.map((item) => (
@@ -853,7 +854,7 @@ function App({ currentView }: AppProps) {
           <div className="panel-heading">
             <div>
               <p className="section-label">Connection</p>
-              <h2>Instagram and webhooks</h2>
+              <h2>Instagram account and webhooks</h2>
             </div>
             {status?.hasAccessToken ? (
               <button
@@ -879,7 +880,7 @@ function App({ currentView }: AppProps) {
               <p>
                 {status?.instagramUserId
                   ? `User ID: ${status.instagramUserId}`
-                  : "Connect an Instagram account to fetch content and send replies."}
+                  : "Continue with a Business or Creator Instagram account to fetch content and send replies."}
               </p>
             </article>
             <article>
