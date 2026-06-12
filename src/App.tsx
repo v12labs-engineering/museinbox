@@ -6,10 +6,11 @@ import {
   AlertTriangle,
   BarChart3,
   CheckCircle2,
-  GalleryHorizontalEnd,
   ExternalLink,
+  GalleryHorizontalEnd,
   Image,
   LayoutDashboard,
+  Menu,
   MessageCircle,
   PauseCircle,
   PlayCircle,
@@ -19,10 +20,43 @@ import {
   Search,
   Send,
   Settings,
+  Sparkles,
   Trash2,
   Unplug,
-  X,
 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import {
   cleanDraftRule,
   composeDm,
@@ -69,6 +103,18 @@ type AppProps = {
   currentView: AppView;
 };
 
+const navItems = [
+  { href: "/", label: "Dashboard", view: "dashboard", icon: LayoutDashboard },
+  {
+    href: "/automations",
+    label: "Automations",
+    view: "automations",
+    icon: GalleryHorizontalEnd,
+  },
+  { href: "/activity", label: "Activity", view: "activity", icon: BarChart3 },
+  { href: "/settings", label: "Settings", view: "settings", icon: Settings },
+] as const;
+
 function formatTime(value: string) {
   return new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
@@ -80,16 +126,23 @@ function formatTime(value: string) {
 
 export function MuseInboxLogo() {
   return (
-    <span className="brand-logo" aria-hidden="true">
-      <svg viewBox="0 0 48 48" role="img">
-        <rect className="logo-base" width="48" height="48" rx="10" />
+    <span
+      className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-[linear-gradient(135deg,#ff6a3d,#e1306c_52%,#833ab4)] shadow-[0_16px_36px_rgba(225,48,108,0.22)]"
+      aria-hidden="true"
+    >
+      <svg className="size-11" viewBox="0 0 48 48" role="img">
+        <rect width="48" height="48" rx="14" fill="transparent" />
         <path
-          className="logo-bubble"
           d="M12.5 17.2c0-3.18 2.58-5.75 5.75-5.75h13.5c3.17 0 5.75 2.57 5.75 5.75v8.55c0 3.18-2.58 5.75-5.75 5.75H23.3l-7.05 5.8v-6.05a5.76 5.76 0 0 1-3.75-5.4v-8.65Z"
+          fill="rgba(255,255,255,0.92)"
         />
-        <path className="logo-line" d="M18.5 21.5h14" />
-        <path className="logo-line" d="M18.5 27.5h8.5" />
-        <circle className="logo-signal" cx="34.5" cy="14" r="4.25" />
+        <path
+          d="M18.5 21.5h14M18.5 27.5h8.5"
+          stroke="#e1306c"
+          strokeLinecap="round"
+          strokeWidth="3"
+        />
+        <circle cx="34.5" cy="14" r="4.25" fill="#ffdc80" />
       </svg>
     </span>
   );
@@ -97,8 +150,8 @@ export function MuseInboxLogo() {
 
 export function InstagramButtonIcon() {
   return (
-    <span className="instagram-button-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" role="img">
+    <span className="grid size-5 shrink-0 place-items-center" aria-hidden="true">
+      <svg className="size-5" viewBox="0 0 24 24" role="img">
         <rect
           x="4.25"
           y="4.25"
@@ -177,7 +230,6 @@ function App({ currentView }: AppProps) {
       setRules(nextRules);
       setActivity(nextActivity);
       setStatus(nextStatus);
-      const shouldLoadMedia = nextStatus.hasAccessToken;
       setSelectedRuleId((currentId) => currentId ?? nextRules[0]?.id ?? null);
       setDraft((currentDraft) => {
         if (currentDraft !== emptyDraft) {
@@ -186,7 +238,7 @@ function App({ currentView }: AppProps) {
         return nextRules[0] ? ruleToDraft(nextRules[0]) : emptyDraft;
       });
       setError("");
-      if (shouldLoadMedia) {
+      if (nextStatus.hasAccessToken) {
         await loadInstagramMedia();
       } else {
         setMedia([]);
@@ -417,724 +469,1239 @@ function App({ currentView }: AppProps) {
     activity: "Activity",
     settings: "Settings",
   }[currentView];
+  const viewSubtitle = {
+    dashboard: "Pick a post, attach a comment trigger, and preview the DM.",
+    automations: "Manage every comment-to-DM rule from one clear list.",
+    activity: "Review previews, live matches, and delivery issues.",
+    settings: "Check Instagram connection health and local reply mode.",
+  }[currentView];
   const isEditingRule = Boolean(selectedRule);
+  const connectionReady = Boolean(status?.hasAccessToken);
 
   return (
-    <main className="app-frame">
-      <aside className="app-sidebar" aria-label="MuseInbox navigation">
-        <Link className="brand-lockup" href="/" aria-label="MuseInbox home">
-          <MuseInboxLogo />
-          <span>
-            <strong>MuseInbox</strong>
-            <small>Business or creator</small>
-          </span>
-        </Link>
-        <nav>
-          <Link
-            className={currentView === "dashboard" ? "active" : ""}
-            href="/"
-          >
-            <LayoutDashboard size={19} aria-hidden="true" />
-            Dashboard
-          </Link>
-          <Link
-            className={currentView === "automations" ? "active" : ""}
-            href="/automations"
-          >
-            <GalleryHorizontalEnd size={19} aria-hidden="true" />
-            Automations
-          </Link>
-          <Link
-            className={currentView === "activity" ? "active" : ""}
-            href="/activity"
-          >
-            <BarChart3 size={19} aria-hidden="true" />
-            Activity
-          </Link>
-          <Link
-            className={currentView === "settings" ? "active" : ""}
-            href="/settings"
-          >
-            <Settings size={19} aria-hidden="true" />
-            Settings
-          </Link>
-        </nav>
-        <div className="sidebar-status">
-          <span className={status?.hasAccessToken ? "status-dot ready" : "status-dot"} />
-          <span>{status?.hasAccessToken ? "Connected" : "Not connected"}</span>
-        </div>
-      </aside>
+    <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(253,186,116,0.28),transparent_34%),linear-gradient(180deg,#fff7f4_0%,#fff_38%,#fafafa_100%)] text-foreground">
+      <div className="mx-auto grid min-h-screen w-full max-w-[1540px] lg:grid-cols-[252px_minmax(0,1fr)]">
+        <DesktopSidebar
+          currentView={currentView}
+          connected={connectionReady}
+          onDisconnect={disconnectInstagram}
+        />
 
-      <section className="app-main" data-view={currentView}>
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">MuseInbox</p>
-            <h1>{viewTitle}</h1>
-          </div>
-          <div className="topbar-actions">
-            {status?.hasAccessToken ? (
-              <>
-                <button
-                  className="secondary-action"
-                  type="button"
-                  onClick={loadInstagramMedia}
-                  disabled={mediaLoading}
-                >
-                  <RefreshCw size={17} aria-hidden="true" />
-                  Refresh content
-                </button>
-                <button
-                  className="secondary-action quiet"
-                  type="button"
-                  onClick={disconnectInstagram}
-                >
-                  <Unplug size={18} aria-hidden="true" />
-                  Disconnect
-                </button>
-              </>
+        <section className="min-w-0 pb-24 lg:pb-0">
+          <header className="sticky top-0 z-30 border-b border-border/70 bg-background/88 px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8">
+            <div className="flex min-w-0 items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <MobileMenu
+                  currentView={currentView}
+                  connected={connectionReady}
+                  onDisconnect={disconnectInstagram}
+                />
+                <div className="min-w-0">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">
+                    MuseInbox
+                  </p>
+                  <h1 className="text-lg font-black leading-tight tracking-tight text-foreground sm:text-3xl">
+                    {viewTitle}
+                  </h1>
+                  <p className="hidden text-sm text-muted-foreground sm:block">
+                    {viewSubtitle}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex shrink-0 items-center gap-2">
+                {connectionReady ? (
+                  <>
+                    <Button
+                      className="hidden sm:inline-flex"
+                      type="button"
+                      variant="outline"
+                      onClick={loadInstagramMedia}
+                      disabled={mediaLoading}
+                    >
+                      <RefreshCw className="size-4" />
+                      Refresh
+                    </Button>
+                    <Button
+                      className="hidden md:inline-flex"
+                      type="button"
+                      variant="ghost"
+                      onClick={disconnectInstagram}
+                    >
+                      <Unplug className="size-4" />
+                      Disconnect
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    asChild
+                    className="bg-[linear-gradient(135deg,#f77737,#e1306c_55%,#833ab4)] !text-white shadow-[0_14px_34px_rgba(225,48,108,0.24)] hover:opacity-95"
+                  >
+                    <Link href="/login">
+                      <InstagramButtonIcon />
+                      <span className="hidden sm:inline">Continue with Instagram</span>
+                      <span className="sm:hidden">Connect</span>
+                    </Link>
+                  </Button>
+                )}
+              </div>
+            </div>
+          </header>
+
+          <div className="space-y-4 px-4 py-4 sm:px-6 lg:px-8">
+            {notice ? (
+              <Alert className="border-emerald-200 bg-emerald-50 text-emerald-950">
+                <CheckCircle2 className="size-4 text-emerald-600" />
+                <AlertDescription className="font-semibold">
+                  {notice}
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
+            {error ? (
+              <Alert className="border-amber-200 bg-amber-50 text-amber-950">
+                <AlertTriangle className="size-4 text-amber-600" />
+                <AlertTitle>Something needs attention.</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : null}
+
+            {activeAnyRules.length > 1 ? (
+              <Alert className="border-amber-200 bg-amber-50 text-amber-950">
+                <AlertTriangle className="size-4 text-amber-600" />
+                <AlertTitle>Multiple “any word” rules are active.</AlertTitle>
+                <AlertDescription>
+                  Preview will use “{activeAnyRules[0].name}”. Turn off the
+                  extras to keep matching predictable.
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
+            {currentView === "settings" ? (
+              <SettingsView
+                status={status}
+                connected={connectionReady}
+                onDisconnect={disconnectInstagram}
+              />
+            ) : currentView === "activity" ? (
+              <ActivityView activity={activity} />
             ) : (
-              <Link className="primary-action link-action" href="/login">
-                <InstagramButtonIcon />
-                Continue with Instagram
-              </Link>
+              <section
+                className={cn(
+                  "grid min-w-0 gap-4",
+                  currentView === "dashboard"
+                    ? "xl:grid-cols-[minmax(280px,0.82fr)_minmax(0,1.45fr)]"
+                    : "xl:grid-cols-[minmax(0,1fr)_360px]",
+                )}
+              >
+                {currentView === "dashboard" ? (
+                  <ContentBrowser
+                    media={media}
+                    loading={mediaLoading}
+                    selectedMedia={selectedMedia}
+                    onRefresh={loadInstagramMedia}
+                    onSelect={selectContent}
+                  />
+                ) : null}
+
+                <div className="grid min-w-0 gap-4">
+                  {currentView === "dashboard" ? (
+                    <SelectedMediaCard
+                      selectedMedia={selectedMedia}
+                      onCreateRule={createRule}
+                      onSyncComments={syncSelectedComments}
+                    />
+                  ) : null}
+
+                  <AutomationPanel
+                    currentView={currentView}
+                    rules={rules}
+                    visibleRules={visibleRules}
+                    selectedRuleId={selectedRuleId}
+                    automationScope={automationScope}
+                    onScopeChange={setAutomationScope}
+                    onCreateRule={createRule}
+                    onSelectRule={selectRule}
+                    onToggleRule={toggleRule}
+                  />
+                </div>
+
+                {currentView === "automations" ? (
+                  <PreviewAndActivity
+                    activity={activity}
+                    matchedDm={matchedDm}
+                    matchedRule={matchedRule}
+                    sampleComment={sampleComment}
+                    onSampleChange={setSampleComment}
+                    onTestComment={testComment}
+                  />
+                ) : null}
+              </section>
             )}
           </div>
-        </header>
+        </section>
+      </div>
 
-        {notice ? (
-          <section className="success" role="status">
-            <CheckCircle2 size={20} aria-hidden="true" />
-            <span>{notice}</span>
-          </section>
-        ) : null}
+      <MobileBottomNav currentView={currentView} />
 
-        {error ? (
-          <section className="warning" role="alert">
-            <AlertTriangle size={20} aria-hidden="true" />
-            <div>
-              <strong>Something needs attention.</strong>
-              <span>{error}</span>
+      <AutomationDialog
+        draft={draft}
+        formInvalid={formInvalid}
+        isEditingRule={isEditingRule}
+        media={media}
+        open={automationModalOpen}
+        selectedRule={selectedRule}
+        onDeleteRule={deleteRule}
+        onOpenChange={setAutomationModalOpen}
+        onSaveRule={saveRule}
+        onSelectMediaTarget={selectMediaTarget}
+        onUpdateDraft={setDraft}
+      />
+    </main>
+  );
+}
+
+function DesktopSidebar({
+  connected,
+  currentView,
+  onDisconnect,
+}: {
+  connected: boolean;
+  currentView: AppView;
+  onDisconnect: () => void;
+}) {
+  return (
+    <aside className="sticky top-0 hidden h-screen min-w-0 border-r border-border/70 bg-background/86 p-4 backdrop-blur-xl lg:flex lg:flex-col">
+      <BrandLockup subtitle="Business or creator" />
+      <nav className="mt-7 grid gap-1">
+        {navItems.map((item) => (
+          <NavLink
+            active={currentView === item.view}
+            href={item.href}
+            icon={item.icon}
+            key={item.href}
+            label={item.label}
+          />
+        ))}
+      </nav>
+      <Card className="mt-auto overflow-hidden border-border/80 bg-card/82 shadow-sm">
+        <CardContent className="grid gap-3 p-3">
+          <div className="flex items-center gap-3">
+            <span
+              className={cn(
+                "size-2.5 rounded-full",
+                connected ? "bg-emerald-500" : "bg-amber-500",
+              )}
+            />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold">
+                {connected ? "Connected" : "Not connected"}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                Instagram workspace
+              </p>
             </div>
-          </section>
-        ) : null}
+          </div>
+          {!connected ? (
+            <Button asChild className="w-full justify-start" variant="outline">
+              <Link href="/login">
+                <InstagramButtonIcon />
+                Connect Instagram
+              </Link>
+            </Button>
+          ) : null}
+          <Button
+            className="w-full justify-start"
+            disabled={!connected}
+            type="button"
+            variant="outline"
+            onClick={onDisconnect}
+          >
+            <Unplug className="size-4" />
+            Logout
+          </Button>
+        </CardContent>
+      </Card>
+    </aside>
+  );
+}
 
-        {activeAnyRules.length > 1 ? (
-          <section className="warning" role="alert">
-            <AlertTriangle size={20} aria-hidden="true" />
-            <div>
-              <strong>Multiple “any word” rules are active.</strong>
-              <span>
-                Preview will use “{activeAnyRules[0].name}”. Turn off the extras
-                to avoid confusion later.
-              </span>
-            </div>
-          </section>
-        ) : null}
+function MobileMenu({
+  connected,
+  currentView,
+  onDisconnect,
+}: {
+  connected: boolean;
+  currentView: AppView;
+  onDisconnect: () => void;
+}) {
+  return (
+    <Sheet>
+      <SheetTrigger asChild>
+        <Button className="lg:hidden" size="icon" variant="outline">
+          <Menu className="size-4" />
+          <span className="sr-only">Open navigation</span>
+        </Button>
+      </SheetTrigger>
+      <SheetContent className="w-[320px] max-w-[88vw] p-4" side="left">
+        <SheetHeader className="text-left">
+          <SheetTitle>
+            <BrandLockup subtitle={connected ? "Connected" : "Not connected"} />
+          </SheetTitle>
+        </SheetHeader>
+        <nav className="mt-6 grid gap-1">
+          {navItems.map((item) => (
+            <NavLink
+              active={currentView === item.view}
+              href={item.href}
+              icon={item.icon}
+              key={item.href}
+              label={item.label}
+            />
+          ))}
+        </nav>
+        <div className="mt-6 rounded-xl border border-border bg-card p-3">
+          <p className="text-sm font-bold">
+            {connected ? "Connected" : "Not connected"}
+          </p>
+          <p className="text-xs text-muted-foreground">Instagram workspace</p>
+          {!connected ? (
+            <Button asChild className="mt-3 w-full justify-start" variant="outline">
+              <Link href="/login">
+                <InstagramButtonIcon />
+                Connect Instagram
+              </Link>
+            </Button>
+          ) : null}
+          <Button
+            className="mt-2 w-full justify-start"
+            disabled={!connected}
+            type="button"
+            variant="outline"
+            onClick={onDisconnect}
+          >
+            <Unplug className="size-4" />
+            Logout
+          </Button>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
 
-        <section className="content-workspace" id="content">
-          <section className="content-browser panel">
-            <div className="panel-heading">
-              <div>
-                <p className="section-label">Instagram content</p>
-                <h2>{media.length} posts and reels</h2>
+function MobileBottomNav({ currentView }: { currentView: AppView }) {
+  return (
+    <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-border bg-background/95 px-2 py-2 backdrop-blur-xl lg:hidden">
+      {navItems.map((item) => {
+        const Icon = item.icon;
+        const active = currentView === item.view;
+        return (
+          <Link
+            className={cn(
+              "flex min-w-0 flex-col items-center gap-1 rounded-lg px-1 py-1.5 text-[0.68rem] font-bold text-muted-foreground",
+              active && "bg-primary/10 text-primary",
+            )}
+            href={item.href}
+            key={item.href}
+          >
+            <Icon className="size-4" />
+            <span className="truncate">{item.label}</span>
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+function BrandLockup({ subtitle }: { subtitle: string }) {
+  return (
+    <Link
+      className="flex min-w-0 items-center gap-3 rounded-xl text-foreground"
+      href="/"
+      aria-label="MuseInbox home"
+    >
+      <MuseInboxLogo />
+      <span className="min-w-0">
+        <strong className="block truncate text-lg font-black leading-none">
+          MuseInbox
+        </strong>
+        <small className="mt-1 block truncate text-xs font-bold text-muted-foreground">
+          {subtitle}
+        </small>
+      </span>
+    </Link>
+  );
+}
+
+function NavLink({
+  active,
+  href,
+  icon: Icon,
+  label,
+}: {
+  active: boolean;
+  href: string;
+  icon: typeof LayoutDashboard;
+  label: string;
+}) {
+  return (
+    <Link
+      className={cn(
+        "flex min-w-0 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold text-muted-foreground transition hover:bg-accent hover:text-accent-foreground",
+        active &&
+          "bg-[linear-gradient(135deg,rgba(247,119,55,0.14),rgba(225,48,108,0.13))] text-primary shadow-sm",
+      )}
+      href={href}
+    >
+      <Icon className="size-4 shrink-0" />
+      <span className="truncate">{label}</span>
+    </Link>
+  );
+}
+
+function ContentBrowser({
+  loading,
+  media,
+  onRefresh,
+  onSelect,
+  selectedMedia,
+}: {
+  loading: boolean;
+  media: InstagramMediaItem[];
+  onRefresh: () => void;
+  onSelect: (item: InstagramMediaItem) => void;
+  selectedMedia: InstagramMediaItem | null;
+}) {
+  return (
+    <Card className="min-w-0 border-border/80 bg-card/92 shadow-sm">
+      <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
+        <div className="min-w-0">
+          <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
+            Instagram content
+          </CardDescription>
+          <CardTitle className="text-xl">{media.length} posts and reels</CardTitle>
+        </div>
+        <Button size="icon" type="button" variant="outline" onClick={onRefresh}>
+          <RefreshCw className="size-4" />
+          <span className="sr-only">Refresh content</span>
+        </Button>
+      </CardHeader>
+      <CardContent>
+        <div className="grid max-h-[620px] gap-2 overflow-auto pr-1">
+          {loading ? (
+            Array.from({ length: 4 }).map((_, index) => (
+              <div
+                className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-xl border border-border p-2"
+                key={index}
+              >
+                <Skeleton className="size-[72px] rounded-lg" />
+                <div className="space-y-2 py-1">
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-3 w-28" />
+                </div>
               </div>
-              <button className="icon-button" type="button" onClick={loadInstagramMedia}>
-                <RefreshCw size={17} aria-hidden="true" />
-                <span className="sr-only">Refresh content</span>
+            ))
+          ) : media.length === 0 ? (
+            <EmptyState
+              icon={Image}
+              title="No Instagram content yet"
+              text="Connect a Business or Creator account to load posts and reels here."
+            />
+          ) : (
+            media.map((item) => (
+              <button
+                className={cn(
+                  "grid min-w-0 grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-xl border border-border bg-background p-2 text-left transition hover:border-primary/40 hover:bg-primary/5",
+                  selectedMedia?.id === item.id &&
+                    "border-primary/50 bg-primary/10 shadow-sm",
+                )}
+                key={item.id}
+                type="button"
+                onClick={() => onSelect(item)}
+              >
+                <MediaThumb item={item} className="size-[72px]" />
+                <span className="min-w-0 py-0.5">
+                  <Badge className="mb-2" variant="secondary">
+                    {item.mediaType === "VIDEO" ? "Reel/video" : "Post"}
+                  </Badge>
+                  <strong className="line-clamp-2 block text-sm font-extrabold leading-snug">
+                    {mediaTitle(item)}
+                  </strong>
+                  <small className="mt-1 block truncate text-xs font-semibold text-muted-foreground">
+                    {mediaStats(item)}
+                  </small>
+                </span>
               </button>
-            </div>
+            ))
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
-            <div className="content-list">
-              {mediaLoading ? (
-                <p className="empty-copy">Fetching Instagram content...</p>
-              ) : media.length === 0 ? (
-                <p className="empty-copy">
-                  Continue with a Business or Creator Instagram account to load posts
-                  and reels.
-                </p>
+function SelectedMediaCard({
+  onCreateRule,
+  onSyncComments,
+  selectedMedia,
+}: {
+  onCreateRule: () => void;
+  onSyncComments: () => void;
+  selectedMedia: InstagramMediaItem | null;
+}) {
+  return (
+    <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92 shadow-sm">
+      <CardContent className="p-4">
+        {selectedMedia ? (
+          <div className="grid gap-4 md:grid-cols-[112px_minmax(0,1fr)] md:items-center">
+            <MediaThumb item={selectedMedia} className="size-28" />
+            <div className="min-w-0">
+              <Badge className="mb-2 bg-primary/10 text-primary hover:bg-primary/10">
+                Selected post/reel
+              </Badge>
+              <h2 className="line-clamp-2 text-xl font-black tracking-tight">
+                {mediaLabel(selectedMedia)}
+              </h2>
+              <p className="mt-1 text-sm font-medium text-muted-foreground">
+                {mediaStats(selectedMedia)}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button type="button" onClick={onCreateRule}>
+                  <Plus className="size-4" />
+                  New automation
+                </Button>
+                <Button type="button" variant="outline" onClick={onSyncComments}>
+                  <RefreshCw className="size-4" />
+                  Check comments
+                </Button>
+                {selectedMedia.permalink ? (
+                  <Button asChild type="button" variant="ghost">
+                    <a
+                      href={selectedMedia.permalink}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      <ExternalLink className="size-4" />
+                      Open
+                    </a>
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <EmptyState
+            icon={Sparkles}
+            title="Pick content to start"
+            text="Choose a post or reel, then create a targeted comment automation."
+            action={
+              <Button type="button" onClick={onCreateRule} variant="outline">
+                <Plus className="size-4" />
+                Create global automation
+              </Button>
+            }
+          />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AutomationPanel({
+  automationScope,
+  currentView,
+  onCreateRule,
+  onScopeChange,
+  onSelectRule,
+  onToggleRule,
+  rules,
+  selectedRuleId,
+  visibleRules,
+}: {
+  automationScope: "selected" | "all" | "global";
+  currentView: AppView;
+  onCreateRule: () => void;
+  onScopeChange: (scope: "selected" | "all" | "global") => void;
+  onSelectRule: (rule: Rule) => void;
+  onToggleRule: (rule: Rule) => void;
+  rules: Rule[];
+  selectedRuleId: string | null;
+  visibleRules: Rule[];
+}) {
+  const tableMode = currentView === "automations";
+
+  return (
+    <Card className="min-w-0 border-border/80 bg-card/92 shadow-sm">
+      <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
+        <div className="min-w-0">
+          <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
+            Automations
+          </CardDescription>
+          <CardTitle className="text-xl">
+            {tableMode ? `${rules.length} total` : `${visibleRules.length} shown`}
+          </CardTitle>
+        </div>
+        <Button className="shrink-0" type="button" onClick={onCreateRule}>
+          <Plus className="size-4" />
+          <span className="hidden sm:inline">New automation</span>
+          <span className="sm:hidden">New</span>
+        </Button>
+      </CardHeader>
+      <CardContent className="min-w-0">
+        {tableMode ? (
+          <AutomationCards
+            rules={rules}
+            onSelectRule={onSelectRule}
+            onToggleRule={onToggleRule}
+          />
+        ) : (
+          <>
+            <Tabs
+              className="mb-4"
+              value={automationScope}
+              onValueChange={(value) =>
+                onScopeChange(value as "selected" | "all" | "global")
+              }
+            >
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="selected">This post</TabsTrigger>
+                <TabsTrigger value="all">All</TabsTrigger>
+                <TabsTrigger value="global">Global</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <div className="grid gap-2">
+              {visibleRules.length === 0 ? (
+                <EmptyState
+                  icon={GalleryHorizontalEnd}
+                  title="No automations here yet"
+                  text="Create a keyword or any-word rule for this scope."
+                />
               ) : (
-                media.map((item) => (
-                  <article
-                    className={`content-item ${
-                      selectedMedia?.id === item.id ? "selected" : ""
-                    }`}
-                    key={item.id}
+                visibleRules.map((rule) => (
+                  <div
+                    className={cn(
+                      "grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-xl border border-border bg-background p-3",
+                      selectedRuleId === rule.id &&
+                        "border-primary/50 bg-primary/10",
+                    )}
+                    key={rule.id}
                   >
-                    <button type="button" onClick={() => selectContent(item)}>
-                      {item.thumbnailUrl || item.mediaUrl ? (
-                        <img alt="" src={item.thumbnailUrl ?? item.mediaUrl} loading="lazy" />
-                      ) : (
-                        <span className="media-placeholder">
-                          <Image size={22} aria-hidden="true" />
-                        </span>
-                      )}
-                      <span>
-                        <em>{item.mediaType === "VIDEO" ? "Reel/video" : "Post"}</em>
-                        <strong>{mediaTitle(item)}</strong>
-                        <small>{mediaStats(item)}</small>
+                    <button
+                      className="min-w-0 text-left"
+                      type="button"
+                      onClick={() => onSelectRule(rule)}
+                    >
+                      <span className="block truncate font-extrabold">
+                        {rule.name}
+                      </span>
+                      <span className="mt-1 block text-sm text-muted-foreground">
+                        {triggerLabel(rule)}
+                      </span>
+                      <span className="mt-1 block truncate text-sm font-semibold text-primary">
+                        {rule.postLabel || "All posts and reels"}
                       </span>
                     </button>
-                  </article>
+                    <Button
+                      className="size-8"
+                      size="icon"
+                      type="button"
+                      variant={rule.active ? "secondary" : "ghost"}
+                      onClick={() => onToggleRule(rule)}
+                      aria-label={rule.active ? "Pause rule" : "Activate rule"}
+                    >
+                      {rule.active ? (
+                        <PlayCircle className="size-4" />
+                      ) : (
+                        <PauseCircle className="size-4" />
+                      )}
+                    </Button>
+                  </div>
                 ))
               )}
             </div>
-          </section>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
-          <section className="selected-workspace">
-            <section className="selected-media panel">
-              {selectedMedia ? (
-                <>
-                  <div className="selected-preview">
-                    {selectedMedia.thumbnailUrl || selectedMedia.mediaUrl ? (
-                      <img
-                        alt=""
-                        src={selectedMedia.thumbnailUrl ?? selectedMedia.mediaUrl}
-                      />
-                    ) : (
-                      <span className="media-placeholder">
-                        <Image size={28} aria-hidden="true" />
-                      </span>
-                    )}
-                    <div>
-                      <p className="section-label">Selected post/reel</p>
-                      <h2>{mediaLabel(selectedMedia)}</h2>
-                      <p>{mediaStats(selectedMedia)}</p>
-                    </div>
-                  </div>
-                  <div className="selected-actions">
-                    <button className="primary-action" type="button" onClick={createRule}>
-                      <Plus size={18} aria-hidden="true" />
-                      New automation
-                    </button>
-                    <button
-                      className="secondary-action"
-                      type="button"
-                      onClick={syncSelectedComments}
-                    >
-                      <RefreshCw size={17} aria-hidden="true" />
-                      Check comments
-                    </button>
-                    {selectedMedia.permalink ? (
-                      <a
-                        className="secondary-action link-action"
-                        href={selectedMedia.permalink}
-                        rel="noreferrer"
-                        target="_blank"
-                      >
-                        <ExternalLink size={17} aria-hidden="true" />
-                        Open
-                      </a>
-                    ) : null}
-                  </div>
-                </>
-              ) : (
-                <div>
-                  <p className="section-label">Selected post/reel</p>
-                  <h2>Pick content to start</h2>
-                  <p className="empty-copy">
-                    Choose a post or reel from the content list to create targeted
-                    comment automations.
-                  </p>
-                </div>
-              )}
-            </section>
+function AutomationCards({
+  onSelectRule,
+  onToggleRule,
+  rules,
+}: {
+  onSelectRule: (rule: Rule) => void;
+  onToggleRule: (rule: Rule) => void;
+  rules: Rule[];
+}) {
+  if (rules.length === 0) {
+    return (
+      <EmptyState
+        icon={GalleryHorizontalEnd}
+        title="No automations created yet"
+        text="Create your first rule to see status and actions here."
+      />
+    );
+  }
 
-            <section className="automation-panel panel" id="automations">
-              <div className="panel-heading">
-                <div>
-                  <p className="section-label">Automations</p>
-                  <h2>
-                    {currentView === "automations"
-                      ? `${rules.length} total`
-                      : `${visibleRules.length} shown`}
-                  </h2>
-                </div>
-                <button className="primary-action" type="button" onClick={createRule}>
-                  <Plus size={18} aria-hidden="true" />
-                  New automation
-                </button>
-              </div>
-
-              {currentView === "automations" ? (
-                <div className="automation-table-wrap">
-                  <table className="automation-table">
-                    <thead>
-                      <tr>
-                        <th>Status</th>
-                        <th>Automation</th>
-                        <th>Trigger</th>
-                        <th>Post/Reel</th>
-                        <th>DM</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rules.length === 0 ? (
-                        <tr>
-                          <td className="table-empty" colSpan={6}>
-                            No automations created yet.
-                          </td>
-                        </tr>
-                      ) : (
-                        rules.map((rule) => (
-                          <tr key={rule.id}>
-                            <td>
-                              <span
-                                className={`table-status ${
-                                  rule.active ? "active" : "paused"
-                                }`}
-                              >
-                                {rule.active ? "Active" : "Paused"}
-                              </span>
-                            </td>
-                            <td>
-                              <button
-                                className="table-title-button"
-                                type="button"
-                                onClick={() => selectRule(rule)}
-                              >
-                                {rule.name}
-                              </button>
-                            </td>
-                            <td>
-                              {rule.triggerType === "any"
-                                ? "Any word"
-                                : `Keyword: ${rule.keyword}`}
-                            </td>
-                            <td>{rule.postLabel || "All posts and reels"}</td>
-                            <td>{shortText(composeDm(rule), 90)}</td>
-                            <td>
-                              <div className="table-actions">
-                                <button
-                                  className="secondary-action quiet"
-                                  type="button"
-                                  onClick={() => selectRule(rule)}
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  className={`status-button ${
-                                    rule.active ? "active" : ""
-                                  }`}
-                                  type="button"
-                                  onClick={() => toggleRule(rule)}
-                                  aria-label={
-                                    rule.active ? "Pause rule" : "Activate rule"
-                                  }
-                                >
-                                  {rule.active ? (
-                                    <PlayCircle size={18} aria-hidden="true" />
-                                  ) : (
-                                    <PauseCircle size={18} aria-hidden="true" />
-                                  )}
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <>
-                  <div className="scope-tabs" role="tablist" aria-label="Automation scope">
-                    <button
-                      className={automationScope === "selected" ? "active" : ""}
-                      type="button"
-                      onClick={() => setAutomationScope("selected")}
-                    >
-                      This post
-                    </button>
-                    <button
-                      className={automationScope === "all" ? "active" : ""}
-                      type="button"
-                      onClick={() => setAutomationScope("all")}
-                    >
-                      All
-                    </button>
-                    <button
-                      className={automationScope === "global" ? "active" : ""}
-                      type="button"
-                      onClick={() => setAutomationScope("global")}
-                    >
-                      Global
-                    </button>
-                  </div>
-
-                  <div className="rule-list">
-                    {visibleRules.length === 0 ? (
-                      <p className="empty-copy">No automations in this view yet.</p>
-                    ) : (
-                      visibleRules.map((rule) => (
-                        <article
-                          className={`rule-row ${
-                            selectedRuleId === rule.id ? "selected" : ""
-                          }`}
-                          key={rule.id}
-                        >
-                          <button type="button" onClick={() => selectRule(rule)}>
-                            <span className="rule-title">{rule.name}</span>
-                            <span className="rule-meta">
-                              {rule.triggerType === "any"
-                                ? "Any word"
-                                : `Keyword: ${rule.keyword}`}
-                            </span>
-                            <span className="rule-post">
-                              {rule.postLabel || "All posts and reels"}
-                            </span>
-                          </button>
-                          <button
-                            className={`status-button ${rule.active ? "active" : ""}`}
-                            type="button"
-                            onClick={() => toggleRule(rule)}
-                            aria-label={rule.active ? "Pause rule" : "Activate rule"}
-                          >
-                            {rule.active ? (
-                              <PlayCircle size={18} aria-hidden="true" />
-                            ) : (
-                              <PauseCircle size={18} aria-hidden="true" />
-                            )}
-                          </button>
-                        </article>
-                      ))
-                    )}
-                  </div>
-                </>
-              )}
-            </section>
-          </section>
-
-          <aside className="builder-stack">
-            <section className="preview-panel panel" aria-label="Preview automation">
-              <div className="panel-heading compact">
-                <div>
-                  <p className="section-label">Preview</p>
-                  <h2>Test comment</h2>
-                </div>
-                <Search size={19} aria-hidden="true" />
-              </div>
-
-              <label className="sample-comment">
-                <span>Sample comment</span>
-                <textarea
-                  value={sampleComment}
-                  onChange={(event) => setSampleComment(event.target.value)}
-                  rows={3}
-                />
-              </label>
-
-              <div className="match-result">
-                {matchedRule ? (
-                  <>
-                    <p className="match-label">Matched</p>
-                    <h3>{matchedRule.name}</h3>
-                    <div className="dm-preview">
-                      <MessageCircle size={18} aria-hidden="true" />
-                      <p>{matchedDm}</p>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <p className="match-label">No match</p>
-                    <h3>No DM would be sent</h3>
-                    <p className="empty-copy">
-                      Add a keyword rule or activate an “any word” rule.
-                    </p>
-                  </>
-                )}
-              </div>
-
-              <button className="secondary-action full-width" onClick={testComment}>
-                <Send size={18} aria-hidden="true" />
-                Add to log
-              </button>
-            </section>
-
-            <section className="activity-panel panel" id="activity" aria-label="Activity log">
-              <div className="panel-heading compact">
-                <div>
-                  <p className="section-label">Activity</p>
-                  <h2>Recent</h2>
-                </div>
-              </div>
-              <div className="activity-list">
-                {activity.length === 0 ? (
-                  <p className="empty-copy">Run a preview to record the match.</p>
-                ) : (
-                  activity.map((entry) => (
-                    <article className="activity-item" key={entry.id}>
-                      <div>
-                        <strong>{entry.matchedRuleName}</strong>
-                        <time>{formatTime(entry.timestamp)}</time>
-                      </div>
-                      <span className={`activity-status ${entry.status}`}>
-                        {entry.source === "local_preview" ? "Preview" : "Instagram"} ·{" "}
-                        {entry.status.replace("_", " ")}
-                      </span>
-                      <p className="comment-text">“{entry.comment}”</p>
-                      <p>{entry.dm}</p>
-                      {entry.error ? <p className="error-text">{entry.error}</p> : null}
-                    </article>
-                  ))
-                )}
-              </div>
-            </section>
-          </aside>
-        </section>
-
-        <section className="settings-view panel" aria-label="Settings">
-          <div className="panel-heading">
-            <div>
-              <p className="section-label">Connection</p>
-              <h2>Instagram account and webhooks</h2>
+  return (
+    <div className="grid gap-3 lg:grid-cols-2">
+      {rules.map((rule) => (
+        <article
+          className="grid min-w-0 gap-4 rounded-2xl border border-border bg-background p-4 shadow-sm transition hover:border-primary/35 hover:shadow-md"
+          key={rule.id}
+        >
+          <div className="flex min-w-0 items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-primary">
+                Automation
+              </p>
+              <h3 className="mt-1 truncate text-lg font-black tracking-tight">
+                {rule.name}
+              </h3>
+              <p className="mt-1 text-sm font-medium text-muted-foreground">
+                {triggerLabel(rule)}
+              </p>
             </div>
-            {status?.hasAccessToken ? (
-              <button
-                className="danger-button"
-                type="button"
-                onClick={disconnectInstagram}
-              >
-                <Unplug size={17} aria-hidden="true" />
-                Disconnect
-              </button>
+            <RuleStatusBadge active={rule.active} />
+          </div>
+
+          <div className="grid gap-3 rounded-xl border border-border bg-muted/30 p-3 text-sm">
+            <div className="min-w-0">
+              <span className="block text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
+                Post/Reel
+              </span>
+              <span className="mt-1 block truncate font-semibold">
+                {rule.postLabel || "All posts and reels"}
+              </span>
+            </div>
+            <Separator />
+            <div className="min-w-0">
+              <span className="block text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
+                DM preview
+              </span>
+              <p className="mt-1 line-clamp-2 text-muted-foreground">
+                {shortText(composeDm(rule), 140)}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-end">
+            <Button
+              className="sm:min-w-24"
+              type="button"
+              variant="outline"
+              onClick={() => onSelectRule(rule)}
+            >
+              Edit
+            </Button>
+            <Button
+              className="sm:min-w-28"
+              type="button"
+              variant={rule.active ? "secondary" : "default"}
+              onClick={() => onToggleRule(rule)}
+            >
+              {rule.active ? (
+                <>
+                  <PauseCircle className="size-4" />
+                  Pause
+                </>
+              ) : (
+                <>
+                  <PlayCircle className="size-4" />
+                  Activate
+                </>
+              )}
+            </Button>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function PreviewAndActivity({
+  activity,
+  matchedDm,
+  matchedRule,
+  onSampleChange,
+  onTestComment,
+  sampleComment,
+}: {
+  activity: Activity[];
+  matchedDm: string;
+  matchedRule: Rule | null;
+  onSampleChange: (value: string) => void;
+  onTestComment: () => void;
+  sampleComment: string;
+}) {
+  return (
+    <aside className="grid min-w-0 gap-4">
+      <Card className="border-border/80 bg-card/92 shadow-sm">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
+                Preview
+              </CardDescription>
+              <CardTitle>Test comment</CardTitle>
+            </div>
+            <Search className="size-5 text-muted-foreground" />
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="sample-comment">Sample comment</Label>
+            <Textarea
+              id="sample-comment"
+              value={sampleComment}
+              onChange={(event) => onSampleChange(event.target.value)}
+              rows={3}
+            />
+          </div>
+          <div className="min-h-36 rounded-xl border border-border bg-muted/45 p-4">
+            {matchedRule ? (
+              <>
+                <Badge className="mb-2 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
+                  Matched
+                </Badge>
+                <h3 className="font-black">{matchedRule.name}</h3>
+                <div className="mt-3 flex gap-2 rounded-xl bg-background p-3 text-sm text-foreground shadow-sm">
+                  <MessageCircle className="mt-0.5 size-4 shrink-0 text-primary" />
+                  <p className="whitespace-pre-wrap">{matchedDm}</p>
+                </div>
+              </>
             ) : (
-              <Link className="primary-action link-action" href="/login">
-                <InstagramButtonIcon />
-                Continue with Instagram
-              </Link>
+              <>
+                <Badge variant="secondary">No match</Badge>
+                <h3 className="mt-2 font-black">No DM would be sent</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Add a keyword rule or activate an “any word” rule.
+                </p>
+              </>
             )}
           </div>
-
-          <div className="settings-grid">
-            <article>
-              <span>Instagram</span>
-              <strong>{status?.hasAccessToken ? "Connected" : "Not connected"}</strong>
-              <p>
-                {status?.instagramUserId
-                  ? `User ID: ${status.instagramUserId}`
-                  : "Continue with a Business or Creator Instagram account to fetch content and send replies."}
-              </p>
-            </article>
-            <article>
-              <span>Webhook</span>
-              <strong>{status?.webhookPath ?? "Not configured"}</strong>
-              <p>
-                {status?.hasVerifyToken
-                  ? "Verify token is configured."
-                  : "Verify token is missing."}
-              </p>
-            </article>
-            <article>
-              <span>Reply mode</span>
-              <strong>{status?.dryRun ? "Dry run" : "Live replies"}</strong>
-              <p>
-                {status?.dryRun
-                  ? "Matching comments are logged without sending DMs."
-                  : "Matching comments can trigger real Instagram replies."}
-              </p>
-            </article>
-            <article>
-              <span>Token</span>
-              <strong>{status?.tokenSource ?? "None"}</strong>
-              <p>
-                {status?.expiresAt
-                  ? `Expires ${formatTime(status.expiresAt)}.`
-                  : "No token expiry available."}
-              </p>
-            </article>
-          </div>
-        </section>
-
-        {automationModalOpen ? (
-          <section className="modal-backdrop" aria-label="Automation setup">
-            <div
-              className="automation-modal"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="automation-modal-title"
-            >
-              <div className="modal-heading">
-                <div>
-                  <p className="section-label">Automation setup</p>
-                  <h2 id="automation-modal-title">
-                    {isEditingRule ? "Edit automation" : "New automation"}
-                  </h2>
-                </div>
-                <button
-                  className="icon-button"
-                  type="button"
-                  onClick={() => setAutomationModalOpen(false)}
-                  aria-label="Close automation setup"
-                >
-                  <X size={18} aria-hidden="true" />
-                </button>
-              </div>
-
-              <form className="rule-form" onSubmit={saveRule}>
-                <label>
-                  <span>Name</span>
-                  <input
-                    value={draft.name}
-                    onChange={(event) =>
-                      setDraft((currentDraft) => ({
-                        ...currentDraft,
-                        name: event.target.value,
-                      }))
-                    }
-                    placeholder="Send toy link"
-                  />
-                </label>
-
-                <fieldset>
-                  <legend>Trigger</legend>
-                  <div className="segmented-control">
-                    <label>
-                      <input
-                        checked={draft.triggerType === "keyword"}
-                        aria-label="Keyword trigger"
-                        name="triggerType"
-                        onChange={() =>
-                          setDraft((currentDraft) => ({
-                            ...currentDraft,
-                            triggerType: "keyword",
-                          }))
-                        }
-                        type="radio"
-                      />
-                      <span>Keyword</span>
-                    </label>
-                    <label>
-                      <input
-                        checked={draft.triggerType === "any"}
-                        aria-label="Any word trigger"
-                        name="triggerType"
-                        onChange={() =>
-                          setDraft((currentDraft) => ({
-                            ...currentDraft,
-                            triggerType: "any",
-                          }))
-                        }
-                        type="radio"
-                      />
-                      <span>Any word</span>
-                    </label>
-                  </div>
-                </fieldset>
-
-                {draft.triggerType === "keyword" ? (
-                  <label>
-                    <span>Keyword</span>
-                    <input
-                      value={draft.keyword}
-                      onChange={(event) =>
-                        setDraft((currentDraft) => ({
-                          ...currentDraft,
-                          keyword: event.target.value,
-                        }))
-                      }
-                      placeholder="TOY"
-                    />
-                  </label>
-                ) : (
-                  <div className="inline-note">
-                    <CheckCircle2 size={18} aria-hidden="true" />
-                    Matches any comment when no keyword rule matches first.
-                  </div>
-                )}
-
-                <label>
-                  <span>Post or reel</span>
-                  <select
-                    value={draft.mediaId ?? ""}
-                    onChange={(event) => selectMediaTarget(event.target.value)}
-                  >
-                    <option value="">All posts and reels</option>
-                    {media.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {mediaLabel(item)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label>
-                  <span>DM message</span>
-                  <textarea
-                    value={draft.message}
-                    onChange={(event) =>
-                      setDraft((currentDraft) => ({
-                        ...currentDraft,
-                        message: event.target.value,
-                      }))
-                    }
-                    placeholder="Thanks for commenting. Here are the details:"
-                    rows={5}
-                  />
-                </label>
-
-                <label>
-                  <span>Link</span>
-                  <input
-                    value={draft.link}
-                    onChange={(event) =>
-                      setDraft((currentDraft) => ({
-                        ...currentDraft,
-                        link: event.target.value,
-                      }))
-                    }
-                    placeholder="https://..."
-                  />
-                </label>
-
-                <label className="toggle-row">
-                  <input
-                    checked={draft.active}
-                    onChange={(event) =>
-                      setDraft((currentDraft) => ({
-                        ...currentDraft,
-                        active: event.target.checked,
-                      }))
-                    }
-                    type="checkbox"
-                  />
-                  <span>Active</span>
-                </label>
-
-                <div className="modal-actions">
-                  {selectedRule ? (
-                    <button
-                      className="danger-button"
-                      type="button"
-                      onClick={() => deleteRule(selectedRule.id)}
-                    >
-                      <Trash2 size={17} aria-hidden="true" />
-                      Delete
-                    </button>
-                  ) : (
-                    <span />
-                  )}
-                  <div>
-                    <button
-                      className="secondary-action quiet"
-                      type="button"
-                      onClick={() => setAutomationModalOpen(false)}
-                    >
-                      Cancel
-                    </button>
-                    <button className="primary-action" disabled={formInvalid}>
-                      <Save size={18} aria-hidden="true" />
-                      Save automation
-                    </button>
-                  </div>
-                </div>
-              </form>
-            </div>
-          </section>
-        ) : null}
-      </section>
-    </main>
+          <Button className="w-full" type="button" variant="outline" onClick={onTestComment}>
+            <Send className="size-4" />
+            Add to log
+          </Button>
+        </CardContent>
+      </Card>
+      <ActivityCard activity={activity} compact />
+    </aside>
   );
+}
+
+function ActivityView({ activity }: { activity: Activity[] }) {
+  return (
+    <div className="max-w-5xl">
+      <ActivityCard activity={activity} />
+    </div>
+  );
+}
+
+function ActivityCard({
+  activity,
+  compact = false,
+}: {
+  activity: Activity[];
+  compact?: boolean;
+}) {
+  return (
+    <Card className="border-border/80 bg-card/92 shadow-sm">
+      <CardHeader>
+        <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
+          Activity
+        </CardDescription>
+        <CardTitle>{compact ? "Recent" : "Recent comment matches"}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className={cn("grid gap-3", compact && "max-h-[360px] overflow-auto pr-1")}>
+          {activity.length === 0 ? (
+            <EmptyState
+              icon={MessageCircle}
+              title="No activity yet"
+              text="Run a preview or sync comments to see matches here."
+            />
+          ) : (
+            activity.map((entry) => (
+              <article
+                className="rounded-xl border border-border bg-background p-4"
+                key={entry.id}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h3 className="truncate font-black">
+                      {entry.matchedRuleName}
+                    </h3>
+                    <time className="text-xs font-semibold text-muted-foreground">
+                      {formatTime(entry.timestamp)}
+                    </time>
+                  </div>
+                  <Badge variant={entry.status === "sent" ? "default" : "secondary"}>
+                    {entry.source === "local_preview" ? "Preview" : "Instagram"} ·{" "}
+                    {entry.status.replace("_", " ")}
+                  </Badge>
+                </div>
+                <p className="mt-3 rounded-lg bg-muted/55 p-3 text-sm font-semibold">
+                  “{entry.comment}”
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">{entry.dm}</p>
+                {entry.error ? (
+                  <p className="mt-2 text-sm font-semibold text-destructive">
+                    {entry.error}
+                  </p>
+                ) : null}
+              </article>
+            ))
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SettingsView({
+  connected,
+  onDisconnect,
+  status,
+}: {
+  connected: boolean;
+  onDisconnect: () => void;
+  status: InstagramStatus | null;
+}) {
+  const items = [
+    {
+      label: "Instagram",
+      value: connected ? "Connected" : "Not connected",
+      text: status?.instagramUserId
+        ? `User ID: ${status.instagramUserId}`
+        : "Connect a Business or Creator account to fetch content and send replies.",
+    },
+    {
+      label: "Webhook",
+      value: status?.webhookPath ?? "Not configured",
+      text: status?.hasVerifyToken
+        ? "Verify token is configured."
+        : "Verify token is missing.",
+    },
+    {
+      label: "Reply mode",
+      value: status?.dryRun ? "Dry run" : "Live replies",
+      text: status?.dryRun
+        ? "Matching comments are logged without sending DMs."
+        : "Matching comments can trigger real Instagram replies.",
+    },
+    {
+      label: "Token",
+      value: status?.tokenSource ?? "None",
+      text: status?.expiresAt
+        ? `Expires ${formatTime(status.expiresAt)}.`
+        : "No token expiry available.",
+    },
+  ];
+
+  return (
+    <Card className="max-w-5xl border-border/80 bg-card/92 shadow-sm">
+      <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
+        <div>
+          <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
+            Connection
+          </CardDescription>
+          <CardTitle>Instagram account and webhooks</CardTitle>
+        </div>
+        {connected ? (
+          <Button type="button" variant="destructive" onClick={onDisconnect}>
+            <Unplug className="size-4" />
+            Disconnect
+          </Button>
+        ) : (
+          <Button asChild>
+            <Link href="/login">
+              <InstagramButtonIcon />
+              Continue with Instagram
+            </Link>
+          </Button>
+        )}
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {items.map((item) => (
+            <article
+              className="min-w-0 rounded-xl border border-border bg-background p-4"
+              key={item.label}
+            >
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-primary">
+                {item.label}
+              </p>
+              <h3 className="mt-2 truncate text-lg font-black">{item.value}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">{item.text}</p>
+            </article>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AutomationDialog({
+  draft,
+  formInvalid,
+  isEditingRule,
+  media,
+  onDeleteRule,
+  onOpenChange,
+  onSaveRule,
+  onSelectMediaTarget,
+  onUpdateDraft,
+  open,
+  selectedRule,
+}: {
+  draft: DraftRule;
+  formInvalid: boolean;
+  isEditingRule: boolean;
+  media: InstagramMediaItem[];
+  onDeleteRule: (ruleId: string) => void;
+  onOpenChange: (open: boolean) => void;
+  onSaveRule: (event: FormEvent<HTMLFormElement>) => void;
+  onSelectMediaTarget: (mediaId: string) => void;
+  onUpdateDraft: React.Dispatch<React.SetStateAction<DraftRule>>;
+  open: boolean;
+  selectedRule: Rule | null;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto rounded-2xl">
+        <DialogHeader>
+          <DialogDescription className="font-bold uppercase tracking-[0.16em] text-primary">
+            Automation setup
+          </DialogDescription>
+          <DialogTitle>
+            {isEditingRule ? "Edit automation" : "New automation"}
+          </DialogTitle>
+        </DialogHeader>
+
+        <form className="grid gap-4" onSubmit={onSaveRule}>
+          <div className="grid gap-2">
+            <Label htmlFor="rule-name">Name</Label>
+            <Input
+              id="rule-name"
+              value={draft.name}
+              onChange={(event) =>
+                onUpdateDraft((currentDraft) => ({
+                  ...currentDraft,
+                  name: event.target.value,
+                }))
+              }
+              placeholder="Send product link"
+            />
+          </div>
+
+          <div className="grid gap-2">
+            <Label>Trigger</Label>
+            <Tabs
+              value={draft.triggerType}
+              onValueChange={(value) =>
+                onUpdateDraft((currentDraft) => ({
+                  ...currentDraft,
+                  triggerType: value as "keyword" | "any",
+                }))
+              }
+            >
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="keyword">Keyword</TabsTrigger>
+                <TabsTrigger value="any">Any word</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+
+          {draft.triggerType === "keyword" ? (
+            <div className="grid gap-2">
+              <Label htmlFor="rule-keyword">Keyword</Label>
+              <Input
+                id="rule-keyword"
+                value={draft.keyword}
+                onChange={(event) =>
+                  onUpdateDraft((currentDraft) => ({
+                    ...currentDraft,
+                    keyword: event.target.value,
+                  }))
+                }
+                placeholder="LINK"
+              />
+            </div>
+          ) : (
+            <Alert className="border-emerald-200 bg-emerald-50 text-emerald-950">
+              <CheckCircle2 className="size-4 text-emerald-600" />
+              <AlertDescription>
+                Matches any comment when no keyword rule matches first.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <div className="grid gap-2">
+            <Label htmlFor="rule-media">Post or reel</Label>
+            <select
+              id="rule-media"
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              value={draft.mediaId ?? ""}
+              onChange={(event) => onSelectMediaTarget(event.target.value)}
+            >
+              <option value="">All posts and reels</option>
+              {media.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {mediaLabel(item)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="rule-message">DM message</Label>
+            <Textarea
+              id="rule-message"
+              value={draft.message}
+              onChange={(event) =>
+                onUpdateDraft((currentDraft) => ({
+                  ...currentDraft,
+                  message: event.target.value,
+                }))
+              }
+              placeholder="Thanks for commenting. Here are the details:"
+              rows={5}
+            />
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="rule-link">Link</Label>
+            <Input
+              id="rule-link"
+              value={draft.link}
+              onChange={(event) =>
+                onUpdateDraft((currentDraft) => ({
+                  ...currentDraft,
+                  link: event.target.value,
+                }))
+              }
+              placeholder="https://..."
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-xl border border-border bg-muted/35 p-3">
+            <div>
+              <Label htmlFor="rule-active">Active</Label>
+              <p className="text-sm text-muted-foreground">
+                Turn this on when the rule is ready to match comments.
+              </p>
+            </div>
+            <Switch
+              id="rule-active"
+              checked={draft.active}
+              onCheckedChange={(checked) =>
+                onUpdateDraft((currentDraft) => ({
+                  ...currentDraft,
+                  active: checked,
+                }))
+              }
+            />
+          </div>
+
+          <DialogFooter className="gap-2 sm:justify-between sm:space-x-0">
+            {selectedRule ? (
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => onDeleteRule(selectedRule.id)}
+              >
+                <Trash2 className="size-4" />
+                Delete
+              </Button>
+            ) : (
+              <span />
+            )}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+              >
+                Cancel
+              </Button>
+              <Button disabled={formInvalid}>
+                <Save className="size-4" />
+                Save automation
+              </Button>
+            </div>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MediaThumb({
+  className,
+  item,
+}: {
+  className?: string;
+  item: InstagramMediaItem;
+}) {
+  return item.thumbnailUrl || item.mediaUrl ? (
+    <img
+      alt=""
+      className={cn("shrink-0 rounded-xl object-cover", className)}
+      src={item.thumbnailUrl ?? item.mediaUrl}
+      loading="lazy"
+    />
+  ) : (
+    <span
+      className={cn(
+        "grid shrink-0 place-items-center rounded-xl bg-[linear-gradient(135deg,rgba(247,119,55,0.18),rgba(225,48,108,0.14))] text-primary",
+        className,
+      )}
+    >
+      <Image className="size-6" />
+    </span>
+  );
+}
+
+function EmptyState({
+  action,
+  icon: Icon,
+  text,
+  title,
+}: {
+  action?: React.ReactNode;
+  icon: typeof Image;
+  text: string;
+  title: string;
+}) {
+  return (
+    <div className="grid place-items-center rounded-xl border border-dashed border-border bg-muted/30 p-6 text-center">
+      <span className="grid size-11 place-items-center rounded-full bg-primary/10 text-primary">
+        <Icon className="size-5" />
+      </span>
+      <h3 className="mt-3 font-black">{title}</h3>
+      <p className="mt-1 max-w-sm text-sm text-muted-foreground">{text}</p>
+      {action ? <div className="mt-4">{action}</div> : null}
+    </div>
+  );
+}
+
+function RuleStatusBadge({ active }: { active: boolean }) {
+  return active ? (
+    <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
+      Active
+    </Badge>
+  ) : (
+    <Badge variant="secondary">Paused</Badge>
+  );
+}
+
+function triggerLabel(rule: Rule) {
+  return rule.triggerType === "any" ? "Any word" : `Keyword: ${rule.keyword}`;
 }
 
 async function apiRequest<T>(path: string, options: RequestInit = {}) {
