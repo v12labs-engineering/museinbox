@@ -11,3 +11,4 @@ coverage/
 .museinbox/
 *.log
 museinbox-*.png
+.vercel
