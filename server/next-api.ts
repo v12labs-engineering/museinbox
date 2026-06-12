@@ -1,4 +1,12 @@
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  createHmac,
+  randomBytes,
+  randomUUID,
+  timingSafeEqual,
+} from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -20,6 +28,7 @@ type DataFile = {
 
 type InstagramIntegration = {
   accessToken?: string;
+  encryptedAccessToken?: string;
   tokenType?: string;
   userId?: string;
   permissions?: string[];
@@ -60,6 +69,8 @@ const dataDirectory = path.resolve(
     (process.env.VERCEL ? "/tmp/museinbox" : ".museinbox"),
 );
 const dataPath = path.join(dataDirectory, "data.json");
+const supabaseStateTable = "museinbox_state";
+const supabaseStateId = "default";
 const defaultScopes = [
   "instagram_business_basic",
   "instagram_business_manage_messages",
@@ -753,6 +764,10 @@ function validateDraft(draft: DraftRule) {
 }
 
 async function readData(): Promise<DataFile> {
+  if (hasSupabaseConfig()) {
+    return readSupabaseData();
+  }
+
   await mkdir(dataDirectory, { recursive: true });
 
   if (!existsSync(dataPath)) {
@@ -771,8 +786,160 @@ async function readData(): Promise<DataFile> {
 }
 
 async function writeData(data: DataFile) {
+  if (hasSupabaseConfig()) {
+    await writeSupabaseData(data);
+    return;
+  }
+
   await mkdir(dataDirectory, { recursive: true });
   await writeFile(dataPath, JSON.stringify(data, null, 2));
+}
+
+function hasSupabaseConfig() {
+  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
+
+async function readSupabaseData(): Promise<DataFile> {
+  const url = supabaseRestUrl();
+  url.searchParams.set("id", `eq.${supabaseStateId}`);
+  url.searchParams.set("select", "data");
+  url.searchParams.set("limit", "1");
+
+  const response = await fetch(url, {
+    headers: supabaseHeaders(),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Supabase read failed: ${await response.text()}`);
+  }
+
+  const rows = (await response.json()) as Array<{ data?: unknown }>;
+  const data = rows[0]?.data;
+  if (!isRecord(data)) {
+    const initialData = normalizeData({});
+    await writeSupabaseData(initialData);
+    return initialData;
+  }
+
+  return normalizeData(decryptData(data));
+}
+
+async function writeSupabaseData(data: DataFile) {
+  const response = await fetch(supabaseRestUrl(), {
+    method: "POST",
+    headers: {
+      ...supabaseHeaders(),
+      Prefer: "resolution=merge-duplicates,return=minimal",
+    },
+    body: JSON.stringify({
+      id: supabaseStateId,
+      data: encryptData(data),
+      updated_at: new Date().toISOString(),
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Supabase write failed: ${await response.text()}`);
+  }
+}
+
+function supabaseRestUrl() {
+  return new URL(`/rest/v1/${supabaseStateTable}`, requiredEnv("SUPABASE_URL"));
+}
+
+function supabaseHeaders() {
+  const serviceRoleKey = requiredEnv("SUPABASE_SERVICE_ROLE_KEY");
+  return {
+    apikey: serviceRoleKey,
+    Authorization: `Bearer ${serviceRoleKey}`,
+    "Content-Type": "application/json",
+  };
+}
+
+function normalizeData(data: Partial<DataFile>): DataFile {
+  return {
+    rules: Array.isArray(data.rules) ? data.rules : starterRules,
+    activity: Array.isArray(data.activity) ? data.activity : [],
+    integration: isRecord(data.integration) ? data.integration : {},
+  };
+}
+
+function encryptData(data: DataFile): DataFile {
+  const integration = data.integration;
+  if (!integration?.accessToken) {
+    return data;
+  }
+
+  const { accessToken, ...restIntegration } = integration;
+  return {
+    ...data,
+    integration: {
+      ...restIntegration,
+      encryptedAccessToken: encryptSecret(accessToken),
+    },
+  };
+}
+
+function decryptData(data: Record<string, unknown>): Partial<DataFile> {
+  const integration = data.integration;
+  if (!isRecord(integration)) {
+    return data as Partial<DataFile>;
+  }
+
+  const encryptedAccessToken = stringFrom(integration.encryptedAccessToken);
+  if (!encryptedAccessToken) {
+    return data as Partial<DataFile>;
+  }
+
+  return {
+    ...data,
+    integration: {
+      ...integration,
+      accessToken: decryptSecret(encryptedAccessToken),
+    },
+  } as Partial<DataFile>;
+}
+
+function encryptSecret(secret: string) {
+  const key = encryptionKey();
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return [
+    "v1",
+    iv.toString("base64url"),
+    tag.toString("base64url"),
+    encrypted.toString("base64url"),
+  ].join(".");
+}
+
+function decryptSecret(payload: string) {
+  const [version, ivValue, tagValue, encryptedValue] = payload.split(".");
+  if (version !== "v1" || !ivValue || !tagValue || !encryptedValue) {
+    throw new Error("Invalid encrypted token format");
+  }
+
+  const decipher = createDecipheriv(
+    "aes-256-gcm",
+    encryptionKey(),
+    Buffer.from(ivValue, "base64url"),
+  );
+  decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(encryptedValue, "base64url")),
+    decipher.final(),
+  ]).toString("utf8");
+}
+
+function encryptionKey() {
+  const secret = process.env.APP_ENCRYPTION_KEY;
+  if (!secret) {
+    throw new Error("Missing APP_ENCRYPTION_KEY for encrypted Supabase storage");
+  }
+
+  return createHash("sha256").update(secret).digest();
 }
 
 async function readJson<T>(request: Request): Promise<T> {
