@@ -497,9 +497,6 @@ function App({ currentView }: AppProps) {
                   onDisconnect={disconnectInstagram}
                 />
                 <div className="min-w-0">
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">
-                    MuseInbox
-                  </p>
                   <h1 className="text-lg font-black leading-tight tracking-tight text-foreground sm:text-3xl">
                     {viewTitle}
                   </h1>
