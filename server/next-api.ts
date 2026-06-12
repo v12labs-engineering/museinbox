@@ -191,13 +191,6 @@ export async function handleApiRequest(request: Request) {
       return syncInstagramComments(request);
     }
 
-    if (
-      (request.method === "GET" || request.method === "POST") &&
-      pathname === "/api/instagram/comments/poll"
-    ) {
-      return pollInstagramComments(request);
-    }
-
     if (request.method === "GET" && pathname === "/api/auth/instagram/start") {
       return startOAuth(request, "instagram");
     }
@@ -1544,102 +1537,6 @@ async function syncInstagramComments(request: Request) {
   }
 }
 
-async function pollInstagramComments(request: Request) {
-  if (!isCronRequestAuthorized(request)) {
-    return json(401, { error: "Unauthorized" });
-  }
-
-  const diagnosticId = createDiagnosticId("poll");
-  const states = await readAutomationStatesForPolling();
-  const totals: CommentSyncResult & { states: number; skipped: number } = {
-    checked: 0,
-    acted: 0,
-    failed: 0,
-    errors: [],
-    states: 0,
-    skipped: 0,
-  };
-
-  logDiagnostic("comment_poll_start", {
-    diagnosticId,
-    states: states.length,
-  });
-
-  for (const state of states) {
-    const { stateId, data } = state;
-    const readContext = getInstagramReadContext(data);
-    const mediaIds = mediaIdsForCommentSync(data);
-    if (!readContext || mediaIds.length === 0) {
-      totals.skipped += 1;
-      logDiagnostic("comment_poll_state_skipped", {
-        diagnosticId,
-        stateId: safeId(stateId),
-        hasConnection: Boolean(readContext),
-        mediaIds: mediaIds.length,
-      });
-      continue;
-    }
-
-    const subscriptionChanged = await ensureInstagramWebhookSubscription(
-      data,
-      diagnosticId,
-    );
-    const aliasChanged = await discoverInstagramWebhookAccountAliases(
-      data,
-      diagnosticId,
-    );
-
-    try {
-      const result = await syncInstagramCommentsForData({
-        data,
-        readContext,
-        mediaIds,
-        diagnosticId,
-        stateId,
-        activitySource: "instagram_comment_poll",
-      });
-      totals.checked += result.checked;
-      totals.acted += result.acted;
-      totals.failed += result.failed;
-      totals.errors.push(...result.errors);
-      totals.states += 1;
-      await writeData(data, stateId);
-    } catch (error) {
-      totals.failed += 1;
-      totals.errors.push(messageFromUnknown(error));
-      if (subscriptionChanged || aliasChanged) {
-        await writeData(data, stateId);
-      }
-      logDiagnostic("comment_poll_state_failed", {
-        diagnosticId,
-        stateId: safeId(stateId),
-        error: summarizeMetaError(messageFromUnknown(error)),
-      });
-    }
-  }
-
-  logDiagnostic("comment_poll_finished", {
-    diagnosticId,
-    checked: totals.checked,
-    acted: totals.acted,
-    failed: totals.failed,
-    states: totals.states,
-    skipped: totals.skipped,
-    errors: totals.errors.map(summarizeMetaError).slice(0, 5),
-  });
-
-  return json(200, {
-    ok: true,
-    diagnosticId,
-    checked: totals.checked,
-    acted: totals.acted,
-    failed: totals.failed,
-    states: totals.states,
-    skipped: totals.skipped,
-    errors: [...new Set(totals.errors)].slice(0, 5),
-  });
-}
-
 async function syncInstagramCommentsForData({
   data,
   readContext,
@@ -2154,65 +2051,6 @@ function mediaIdsForCommentSync(data: DataFile, requestedMediaId?: string) {
   ].filter((value, index, values): value is string => {
     return typeof value === "string" && value.length > 0 && values.indexOf(value) === index;
   });
-}
-
-function isCronRequestAuthorized(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    return true;
-  }
-
-  return request.headers.get("authorization") === `Bearer ${secret}`;
-}
-
-async function readAutomationStatesForPolling() {
-  if (!hasSupabaseConfig()) {
-    return [{ stateId: defaultStateId, data: await readData(defaultStateId) }];
-  }
-
-  const rows = await readSupabaseStateRowsForPolling();
-  return rows
-    .map((row) => {
-      if (!row.stateId || !isRecord(row.data)) {
-        return null;
-      }
-
-      const data = normalizeData(decryptData(row.data));
-      if (!isPollableAutomationState(data)) {
-        return null;
-      }
-
-      return { stateId: row.stateId, data };
-    })
-    .filter((row): row is { stateId: string; data: DataFile } => Boolean(row));
-}
-
-async function readSupabaseStateRowsForPolling() {
-  const url = supabaseRestUrl();
-  url.searchParams.set("select", "id,data");
-  url.searchParams.set("order", "updated_at.desc");
-  url.searchParams.set("limit", "100");
-
-  const response = await fetch(url, {
-    headers: supabaseHeaders(),
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    throw new Error(`Supabase polling state lookup failed: ${await response.text()}`);
-  }
-
-  const rows = (await response.json()) as Array<{ id?: unknown; data?: unknown }>;
-  return rows.map((row) => ({
-    stateId: stringFrom(row.id),
-    data: row.data,
-  }));
-}
-
-function isPollableAutomationState(data: DataFile) {
-  return Boolean(
-    getInstagramReadContext(data) &&
-      data.rules.some((rule) => rule.active && rule.mediaId),
-  );
 }
 
 function readSignedCookie<T>(request: Request, name: string): T | null {

@@ -36,7 +36,6 @@ export type Activity = {
     | "instagram_webhook"
     | "instagram_comment"
     | "instagram_comment_sync"
-    | "instagram_comment_poll"
     | "instagram_mention"
     | "instagram_message";
   error?: string;
