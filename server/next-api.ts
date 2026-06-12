@@ -1892,8 +1892,11 @@ function requiredEnv(key: string) {
 }
 
 function verifySignature(request: Request, rawBody: Buffer) {
-  const appSecret = process.env.INSTAGRAM_APP_SECRET;
-  if (!appSecret) {
+  const appSecrets = [
+    process.env.INSTAGRAM_APP_SECRET,
+    process.env.FACEBOOK_APP_SECRET,
+  ].filter((secret): secret is string => Boolean(secret));
+  if (appSecrets.length === 0) {
     return true;
   }
 
@@ -1902,11 +1905,13 @@ function verifySignature(request: Request, rawBody: Buffer) {
     return false;
   }
 
-  const expected = Buffer.from(
-    `sha256=${createHmac("sha256", appSecret).update(rawBody).digest("hex")}`,
-  );
   const actual = Buffer.from(signature);
-  return expected.length === actual.length && timingSafeEqual(expected, actual);
+  return appSecrets.some((appSecret) => {
+    const expected = Buffer.from(
+      `sha256=${createHmac("sha256", appSecret).update(rawBody).digest("hex")}`,
+    );
+    return expected.length === actual.length && timingSafeEqual(expected, actual);
+  });
 }
 
 function validateDraft(draft: DraftRule) {
