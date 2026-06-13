@@ -15,12 +15,12 @@ import { InstagramButtonIcon, MuseInboxLogo } from "../../src/App";
 
 export default function LoginPage() {
   return (
-    <main className="grid min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_15%_10%,rgba(253,186,116,0.38),transparent_30%),radial-gradient(circle_at_85%_10%,rgba(225,48,108,0.22),transparent_28%),linear-gradient(180deg,#fff7f4_0%,#fff_48%,#fafafa_100%)] p-4 text-foreground sm:p-6">
+    <main className="muse-page-bg grid min-h-screen overflow-x-hidden p-4 text-foreground sm:p-6">
       <section
         className="mx-auto grid w-full max-w-6xl gap-5 self-center lg:grid-cols-[0.9fr_1.1fr]"
         aria-label="Continue with Instagram"
       >
-        <Card className="border-border/80 bg-card/92 shadow-[0_24px_70px_rgba(225,48,108,0.12)]">
+        <Card className="muse-panel-shadow border-border/80 bg-card/92">
           <CardContent className="flex min-h-[560px] flex-col justify-center p-6 sm:p-9">
             <Link
               className="mb-12 flex min-w-0 items-center gap-3"
@@ -52,7 +52,7 @@ export default function LoginPage() {
 
             <Button
               asChild
-              className="mt-8 h-12 w-max bg-[linear-gradient(135deg,#f77737,#e1306c_55%,#833ab4)] px-5 !text-white shadow-[0_16px_40px_rgba(225,48,108,0.24)] hover:opacity-95"
+              className="instagram-cta mt-8 h-12 w-max px-5"
               size="lg"
             >
               <a href="/api/auth/instagram/start">
@@ -75,12 +75,12 @@ export default function LoginPage() {
           </CardContent>
         </Card>
 
-        <Card className="overflow-hidden border-border/80 bg-card/80 shadow-[0_24px_70px_rgba(131,58,180,0.12)]">
+        <Card className="muse-panel-shadow overflow-hidden border-border/80 bg-card/80">
           <CardContent className="grid min-h-[560px] place-items-center p-6 sm:p-9">
             <div className="w-full max-w-[390px] rounded-[2rem] border border-border bg-background p-4 shadow-2xl">
               <div className="mb-4 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="grid size-9 place-items-center rounded-full bg-[linear-gradient(135deg,#f77737,#e1306c_55%,#833ab4)] text-white">
+                  <span className="grid size-9 place-items-center rounded-full bg-primary/10 text-primary">
                     <Sparkles className="size-4" />
                   </span>
                   <div>
@@ -93,8 +93,8 @@ export default function LoginPage() {
                 <Badge variant="secondary">Live</Badge>
               </div>
 
-              <div className="aspect-square rounded-[1.4rem] bg-[linear-gradient(145deg,#ffdc80,#f77737_34%,#e1306c_68%,#833ab4)] p-4">
-                <div className="flex h-full flex-col justify-end rounded-[1rem] bg-black/10 p-4 text-white">
+              <div className="aspect-square rounded-[1.4rem] bg-[linear-gradient(145deg,oklch(0.9_0.018_220),oklch(0.68_0.05_235))] p-4">
+                <div className="flex h-full flex-col justify-end rounded-[1rem] bg-slate-950/10 p-4 text-white">
                   <p className="max-w-[230px] text-2xl font-black leading-tight">
                     Comment “LINK” and get the guide in DM
                   </p>

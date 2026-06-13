@@ -12,6 +12,9 @@ export type Rule = {
   message: string;
   link: string;
   active: boolean;
+  consecutiveFailures?: number;
+  pauseReason?: string;
+  pausedAt?: string;
   createdAt: string;
   updatedAt: string;
 };

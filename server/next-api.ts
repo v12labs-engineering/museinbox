@@ -25,6 +25,7 @@ type DataFile = {
   activity: Activity[];
   processedCommentIds?: string[];
   integration?: InstagramIntegration;
+  fairUse?: FairUseState;
 };
 
 type InstagramIntegration = {
@@ -50,6 +51,12 @@ type InstagramIntegration = {
   oauthRedirectUri?: string;
   oauthAuthorizeUrl?: string;
   lastOAuthError?: string;
+};
+
+type FairUseState = {
+  day?: string;
+  dmSendAttempts?: number;
+  commentChecks?: number;
 };
 
 type InstagramWebhookEvent = {
@@ -86,6 +93,14 @@ type InstagramCommentItem = {
   parentId?: string;
 };
 
+type InstagramCommentReadItem = InstagramCommentItem & {
+  matchedRuleName?: string;
+  matchedRuleId?: string;
+  wouldSend: boolean;
+  alreadyProcessed: boolean;
+  skippedReason?: "reply_comment" | "already_processed" | "older_than_rule" | "no_matching_rule";
+};
+
 type SendReplyResult =
   | {
       ok: true;
@@ -116,6 +131,12 @@ const supabaseStateTable = "museinbox_state";
 const defaultStateId = "default";
 const sessionCookieName = "museinbox_session";
 const oauthCookieName = "museinbox_oauth";
+const fairUseLimits = {
+  activeAutomations: 5,
+  dmSendAttemptsPerDay: 100,
+  commentChecksPerDay: 500,
+  consecutiveFailuresBeforePause: 5,
+};
 const defaultScopes = [
   "instagram_business_basic",
   "instagram_business_manage_messages",
@@ -126,9 +147,6 @@ const defaultFacebookScopes = [
   "pages_read_engagement",
   "pages_messaging",
   "business_management",
-  "instagram_basic",
-  "instagram_manage_comments",
-  "instagram_manage_messages",
 ].join(",");
 
 const starterRules: Rule[] = [
@@ -187,6 +205,10 @@ export async function handleApiRequest(request: Request) {
       return handleInstagramMedia(request);
     }
 
+    if (request.method === "GET" && pathname === "/api/instagram/comments") {
+      return readInstagramComments(request, requestUrl);
+    }
+
     if (request.method === "POST" && pathname === "/api/instagram/comments/sync") {
       return syncInstagramComments(request);
     }
@@ -218,6 +240,24 @@ export async function handleApiRequest(request: Request) {
       pathname === "/api/auth/instagram/disconnect"
     ) {
       return disconnectInstagram(request);
+    }
+
+    if (
+      request.method === "POST" &&
+      pathname === "/api/auth/instagram/deauthorize"
+    ) {
+      return handleInstagramDeauthorize();
+    }
+
+    if (
+      (request.method === "GET" || request.method === "POST") &&
+      pathname === "/api/auth/instagram/data-deletion"
+    ) {
+      return handleInstagramDataDeletionRequest(request);
+    }
+
+    if (request.method === "POST" && pathname === "/api/account/delete") {
+      return deleteAccountData(request);
     }
 
     if (request.method === "GET" && pathname === "/api/instagram/status") {
@@ -275,6 +315,7 @@ export async function handleApiRequest(request: Request) {
         hasAppSecret: Boolean(process.env.INSTAGRAM_APP_SECRET),
         hasFacebookAppSecret: Boolean(getFacebookAppSecret()),
         dryRun: process.env.INSTAGRAM_DRY_RUN === "true",
+        fairUse: fairUseSummary(data),
       });
     }
 
@@ -301,14 +342,22 @@ async function handleRules(request: Request) {
     const draft = cleanDraftRule(await readJson<DraftRule>(request));
     validateDraft(draft);
     const now = new Date().toISOString();
+    const stateId = getRequestStateId(request);
+    const data = await readData(stateId);
+    const shouldForcePaused =
+      draft.active && activeAutomationCount(data.rules) >= fairUseLimits.activeAutomations;
     const rule: Rule = {
       ...draft,
+      active: shouldForcePaused ? false : draft.active,
+      consecutiveFailures: 0,
+      pauseReason: shouldForcePaused
+        ? `Free forever fair-use limit: only ${fairUseLimits.activeAutomations} automations can be active at once.`
+        : undefined,
+      pausedAt: shouldForcePaused ? now : undefined,
       id: randomUUID(),
       createdAt: now,
       updatedAt: now,
     };
-    const stateId = getRequestStateId(request);
-    const data = await readData(stateId);
     data.rules = [rule, ...data.rules];
     await writeData(data, stateId);
     return json(201, rule);
@@ -330,9 +379,23 @@ async function handleRuleById(request: Request, pathname: string) {
   if (request.method === "PUT") {
     const draft = cleanDraftRule(await readJson<DraftRule>(request));
     validateDraft(draft);
+    const activatingRule = !rule.active && draft.active;
+    if (
+      activatingRule &&
+      activeAutomationCount(data.rules, rule.id) >= fairUseLimits.activeAutomations
+    ) {
+      return json(429, {
+        error: `Free forever fair-use limit reached. Pause another automation before activating this one.`,
+      });
+    }
+
     const updatedRule: Rule = {
       ...rule,
       ...draft,
+      consecutiveFailures:
+        activatingRule && rule.pauseReason ? 0 : rule.consecutiveFailures,
+      pauseReason: draft.active ? undefined : rule.pauseReason,
+      pausedAt: draft.active ? undefined : rule.pausedAt,
       updatedAt: new Date().toISOString(),
     };
     data.rules = data.rules.map((item) => (item.id === id ? updatedRule : item));
@@ -599,6 +662,27 @@ async function disconnectInstagram(request: Request) {
   };
   await writeData(data, stateId);
   return json(200, { ok: true }, [clearCookie(sessionCookieName)]);
+}
+
+async function deleteAccountData(request: Request) {
+  const stateId = getRequestStateId(request);
+  await writeData(emptyAccountData(), stateId);
+  return json(200, { ok: true }, [
+    clearCookie(sessionCookieName),
+    clearCookie(oauthCookieName),
+  ]);
+}
+
+function handleInstagramDeauthorize() {
+  return json(200, { ok: true });
+}
+
+function handleInstagramDataDeletionRequest(request: Request) {
+  const confirmationCode = createDiagnosticId("data_deletion");
+  return json(200, {
+    url: new URL("/data-deletion", request.url).toString(),
+    confirmation_code: confirmationCode,
+  });
 }
 
 function verifyWebhook(requestUrl: URL) {
@@ -1038,12 +1122,19 @@ async function processInstagramEvent(
   };
 
   if (matchedRule && dm) {
-    const sendResult = await sendWebhookReply(
-      data,
-      event.replyTarget,
-      dm,
-      diagnosticId,
-    );
+    if (!hasDmSendAttemptCapacity(data)) {
+      entry.status = "failed";
+      entry.error = "Daily DM send attempt limit reached. Try again tomorrow.";
+      data.activity = [entry, ...data.activity].slice(0, 50);
+      logDiagnostic("event_send_blocked_by_fair_use", {
+        diagnosticId,
+        matchedRuleId: safeId(matchedRule.id),
+      });
+      return;
+    }
+
+    recordDmSendAttempt(data);
+    const sendResult = await sendWebhookReply(data, event.replyTarget, dm, diagnosticId);
     entry.status = sendResult.ok ? sendResult.status : "failed";
     entry.error = sendResult.error;
     entry.deliveryAttempts = sendResult.attempts;
@@ -1055,6 +1146,8 @@ async function processInstagramEvent(
         ...(data.processedCommentIds ?? []).filter((id) => id !== commentId),
       ].slice(0, 1000);
     }
+
+    updateRuleFailureState(data, matchedRule.id, sendResult.ok, sendResult.error);
   }
 
   data.activity = [entry, ...data.activity].slice(0, 50);
@@ -1474,6 +1567,84 @@ async function handleInstagramMedia(request: Request) {
   return json(200, media);
 }
 
+async function readInstagramComments(request: Request, requestUrl: URL) {
+  const diagnosticId = createDiagnosticId("read_comments");
+  const stateId = getRequestStateId(request);
+  const data = await readData(stateId);
+  const readContext = getInstagramReadContext(data);
+  if (!readContext) {
+    logDiagnostic("comment_read_missing_connection", {
+      diagnosticId,
+      stateId: safeId(stateId),
+    });
+    return json(401, { error: "Connect Instagram first" });
+  }
+
+  const mediaId = requestUrl.searchParams.get("mediaId")?.trim();
+  if (!mediaId) {
+    return json(400, { error: "Pick a post or reel first" });
+  }
+
+  if (!hasCommentCheckCapacity(data)) {
+    return json(429, {
+      error: `Daily comment check limit reached. Try again tomorrow.`,
+      fairUse: fairUseSummary(data),
+    });
+  }
+
+  try {
+    const comments = await fetchInstagramComments(readContext, mediaId);
+    recordCommentChecks(data, comments.length);
+    await writeData(data, stateId);
+    const items: InstagramCommentReadItem[] = comments.map((comment) => {
+      const matchingRule = findMatchingRule(comment.text, data.rules, mediaId);
+      const alreadyProcessed = data.processedCommentIds?.includes(comment.id) ?? false;
+      const eligible = matchingRule ? commentIsEligibleForRule(comment, matchingRule) : false;
+      const skippedReason = comment.parentId
+        ? "reply_comment"
+        : alreadyProcessed
+          ? "already_processed"
+          : matchingRule && !eligible
+            ? "older_than_rule"
+            : matchingRule
+              ? undefined
+              : "no_matching_rule";
+
+      return {
+        ...comment,
+        matchedRuleId: matchingRule?.id,
+        matchedRuleName: matchingRule?.name,
+        wouldSend: Boolean(matchingRule && eligible && !comment.parentId && !alreadyProcessed),
+        alreadyProcessed,
+        skippedReason,
+      };
+    });
+
+    logDiagnostic("comment_read_finished", {
+      diagnosticId,
+      stateId: safeId(stateId),
+      mediaId: safeId(mediaId),
+      comments: items.length,
+      visibleSendCandidates: items.filter((item) => item.wouldSend).length,
+    });
+
+    return json(200, {
+      ok: true,
+      diagnosticId,
+      mediaId,
+      comments: items,
+    });
+  } catch (error) {
+    const message = messageFromUnknown(error);
+    const status = isExpiredMetaTokenError(message) ? 401 : 502;
+    return json(status, {
+      error: isExpiredMetaTokenError(message)
+        ? "Instagram connection expired. Reconnect Instagram, then read comments again."
+        : message,
+    });
+  }
+}
+
 async function syncInstagramComments(request: Request) {
   const diagnosticId = createDiagnosticId("sync");
   const stateId = getRequestStateId(request);
@@ -1482,7 +1653,7 @@ async function syncInstagramComments(request: Request) {
     data,
     diagnosticId,
   );
-  if (subscriptionChanged) {
+    if (subscriptionChanged) {
     await writeData(data, stateId);
   }
 
@@ -1505,6 +1676,13 @@ async function syncInstagramComments(request: Request) {
       rules: data.rules.length,
     });
     return json(400, { error: "Pick a post or create a post-specific automation first" });
+  }
+
+  if (!hasCommentCheckCapacity(data)) {
+    return json(429, {
+      error: `Daily comment check limit reached. Try again tomorrow.`,
+      fairUse: fairUseSummary(data),
+    });
   }
 
   try {
@@ -1576,9 +1754,15 @@ async function syncInstagramCommentsForData({
   };
 
   for (const mediaId of mediaIds) {
+    if (!hasCommentCheckCapacity(data)) {
+      result.errors.push("Daily comment check limit reached.");
+      break;
+    }
+
     let comments: InstagramCommentItem[];
     try {
       comments = await fetchInstagramComments(readContext, mediaId);
+      recordCommentChecks(data, comments.length);
       logDiagnostic("comment_sync_comments_fetched", {
         diagnosticId,
         mediaId: safeId(mediaId),
@@ -1752,7 +1936,7 @@ function commentIsEligibleForRule(comment: InstagramCommentItem, rule: Rule) {
 }
 
 function getGraphVersion() {
-  return process.env.INSTAGRAM_GRAPH_VERSION ?? "v24.0";
+  return process.env.INSTAGRAM_GRAPH_VERSION ?? "v25.0";
 }
 
 function getOAuthRedirectUri(request: Request, provider: "instagram" | "facebook" = "instagram") {
@@ -1770,7 +1954,7 @@ function getOAuthRedirectUri(request: Request, provider: "instagram" | "facebook
 }
 
 function redirectToApp(request: Request, message: string, cookies: string[] = []) {
-  const url = new URL("/", request.url);
+  const url = new URL("/dashboard", request.url);
   url.searchParams.set("instagram", message);
   return redirect(url.toString(), cookies);
 }
@@ -1898,6 +2082,119 @@ function privateReplyReadiness(data: DataFile) {
     pageName: data.integration?.pageName,
     loginProvider: data.integration?.loginProvider,
   };
+}
+
+function fairUseSummary(data: DataFile) {
+  const usage = todayFairUse(data);
+  return {
+    limits: fairUseLimits,
+    usage,
+    remaining: {
+      activeAutomations: Math.max(
+        0,
+        fairUseLimits.activeAutomations - activeAutomationCount(data.rules),
+      ),
+      dmSendAttempts: Math.max(
+        0,
+        fairUseLimits.dmSendAttemptsPerDay - (usage.dmSendAttempts ?? 0),
+      ),
+      commentChecks: Math.max(
+        0,
+        fairUseLimits.commentChecksPerDay - (usage.commentChecks ?? 0),
+      ),
+    },
+  };
+}
+
+function activeAutomationCount(rules: Rule[], excludeRuleId?: string) {
+  return rules.filter((rule) => rule.active && rule.id !== excludeRuleId).length;
+}
+
+function hasDmSendAttemptCapacity(data: DataFile) {
+  return (
+    (todayFairUse(data).dmSendAttempts ?? 0) <
+    fairUseLimits.dmSendAttemptsPerDay
+  );
+}
+
+function recordDmSendAttempt(data: DataFile) {
+  const usage = todayFairUse(data);
+  usage.dmSendAttempts = (usage.dmSendAttempts ?? 0) + 1;
+}
+
+function hasCommentCheckCapacity(data: DataFile) {
+  return (
+    (todayFairUse(data).commentChecks ?? 0) <
+    fairUseLimits.commentChecksPerDay
+  );
+}
+
+function recordCommentChecks(data: DataFile, count: number) {
+  const usage = todayFairUse(data);
+  usage.commentChecks = (usage.commentChecks ?? 0) + Math.max(0, count);
+}
+
+function todayFairUse(data: DataFile) {
+  const day = currentUsageDay();
+  if (data.fairUse?.day !== day) {
+    data.fairUse = { day, dmSendAttempts: 0, commentChecks: 0 };
+  }
+
+  return data.fairUse;
+}
+
+function currentUsageDay() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function updateRuleFailureState(
+  data: DataFile,
+  ruleId: string,
+  sent: boolean,
+  error?: string,
+) {
+  data.rules = data.rules.map((rule) => {
+    if (rule.id !== ruleId) {
+      return rule;
+    }
+
+    if (sent) {
+      return {
+        ...rule,
+        consecutiveFailures: 0,
+        pauseReason: undefined,
+        pausedAt: undefined,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    const consecutiveFailures = (rule.consecutiveFailures ?? 0) + 1;
+    const shouldPause =
+      consecutiveFailures >= fairUseLimits.consecutiveFailuresBeforePause;
+    return {
+      ...rule,
+      active: shouldPause ? false : rule.active,
+      consecutiveFailures,
+      pauseReason: shouldPause
+        ? `Paused after ${fairUseLimits.consecutiveFailuresBeforePause} failed Instagram send attempts in a row. Last error: ${summarizeRulePauseError(error)}`
+        : rule.pauseReason,
+      pausedAt: shouldPause ? new Date().toISOString() : rule.pausedAt,
+      updatedAt: new Date().toISOString(),
+    };
+  });
+}
+
+function summarizeRulePauseError(error?: string) {
+  if (!error) {
+    return "Instagram rejected the send.";
+  }
+
+  const summary = summarizeMetaError(error);
+  if (typeof summary === "string") {
+    return summary.slice(0, 180);
+  }
+
+  return (summary.message ?? "Instagram rejected the send.").slice(0, 180);
 }
 
 function providerLabel(provider: "instagram" | "facebook") {
@@ -2293,7 +2590,7 @@ async function readData(stateId = defaultStateId): Promise<DataFile> {
   const localDataPath = localDataPathForState(stateId);
 
   if (!existsSync(localDataPath)) {
-    const initialData = { rules: starterRules, activity: [], integration: {} };
+    const initialData = normalizeData({});
     await writeData(initialData, stateId);
     return initialData;
   }
@@ -2391,6 +2688,29 @@ function normalizeData(data: Partial<DataFile>): DataFile {
       ? data.processedCommentIds.filter((id): id is string => typeof id === "string")
       : [],
     integration: isRecord(data.integration) ? data.integration : {},
+    fairUse: normalizeFairUse(data.fairUse),
+  };
+}
+
+function emptyAccountData(): DataFile {
+  return {
+    rules: [],
+    activity: [],
+    processedCommentIds: [],
+    integration: {},
+    fairUse: { day: currentUsageDay(), dmSendAttempts: 0, commentChecks: 0 },
+  };
+}
+
+function normalizeFairUse(value: unknown): FairUseState {
+  if (!isRecord(value)) {
+    return { day: currentUsageDay(), dmSendAttempts: 0, commentChecks: 0 };
+  }
+
+  return {
+    day: stringFrom(value.day) || currentUsageDay(),
+    dmSendAttempts: numberFrom(value.dmSendAttempts) ?? 0,
+    commentChecks: numberFrom(value.commentChecks) ?? 0,
   };
 }
 

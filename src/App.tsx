@@ -1,11 +1,12 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
   BarChart3,
   CheckCircle2,
+  Eye,
   ExternalLink,
   GalleryHorizontalEnd,
   Image,
@@ -93,6 +94,26 @@ type InstagramStatus = {
   hasVerifyToken: boolean;
   hasAppSecret: boolean;
   dryRun: boolean;
+  fairUse?: FairUseSummary;
+};
+
+type FairUseSummary = {
+  limits: {
+    activeAutomations: number;
+    dmSendAttemptsPerDay: number;
+    commentChecksPerDay: number;
+    consecutiveFailuresBeforePause: number;
+  };
+  usage: {
+    day?: string;
+    dmSendAttempts?: number;
+    commentChecks?: number;
+  };
+  remaining: {
+    activeAutomations: number;
+    dmSendAttempts: number;
+    commentChecks: number;
+  };
 };
 
 type CommentSyncResponse = {
@@ -100,6 +121,27 @@ type CommentSyncResponse = {
   acted: number;
   failed?: number;
   errors?: string[];
+};
+
+type InstagramCommentReadItem = {
+  id: string;
+  text: string;
+  timestamp?: string;
+  username?: string;
+  parentId?: string;
+  matchedRuleName?: string;
+  wouldSend: boolean;
+  alreadyProcessed: boolean;
+  skippedReason?:
+    | "reply_comment"
+    | "already_processed"
+    | "older_than_rule"
+    | "no_matching_rule";
+};
+
+type InstagramCommentReadResponse = {
+  comments: InstagramCommentReadItem[];
+  diagnosticId: string;
 };
 
 type InstagramMediaItem = {
@@ -121,7 +163,12 @@ type AppProps = {
 };
 
 const navItems = [
-  { href: "/", label: "Dashboard", view: "dashboard", icon: LayoutDashboard },
+  {
+    href: "/dashboard",
+    label: "Dashboard",
+    view: "dashboard",
+    icon: LayoutDashboard,
+  },
   {
     href: "/automations",
     label: "Automations",
@@ -144,7 +191,7 @@ function formatTime(value: string) {
 export function MuseInboxLogo() {
   return (
     <span
-      className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-[linear-gradient(135deg,#ff6a3d,#e1306c_52%,#833ab4)] shadow-[0_16px_36px_rgba(225,48,108,0.22)]"
+      className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-[linear-gradient(135deg,#ff6a3d,#e1306c_52%,#833ab4)] shadow-[0_14px_30px_rgba(15,23,42,0.14)]"
       aria-hidden="true"
     >
       <svg className="size-11" viewBox="0 0 48 48" role="img">
@@ -208,9 +255,12 @@ function App({ currentView }: AppProps) {
   >("selected");
   const [automationModalOpen, setAutomationModalOpen] = useState(false);
   const [mediaLoading, setMediaLoading] = useState(false);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [selectedMediaComments, setSelectedMediaComments] = useState<
+    InstagramCommentReadItem[] | null
+  >(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const autoSyncInFlight = useRef(false);
 
   const selectedMedia =
     media.find((mediaItem) => mediaItem.id === selectedMediaId) ?? null;
@@ -228,14 +278,6 @@ function App({ currentView }: AppProps) {
   });
   const activeAnyRules = rules.filter(
     (rule) => rule.active && rule.triggerType === "any",
-  );
-  const hasActiveRuleForSelectedMedia = useMemo(
-    () =>
-      Boolean(selectedMediaId) &&
-      rules.some(
-        (rule) => rule.active && (!rule.mediaId || rule.mediaId === selectedMediaId),
-      ),
-    [rules, selectedMediaId],
   );
   const matchedRule = useMemo(
     () => findMatchingRule(sampleComment, rules, selectedMedia?.id),
@@ -415,6 +457,34 @@ function App({ currentView }: AppProps) {
     await syncCommentsForMedia(selectedMedia.id);
   }
 
+  async function readSelectedComments() {
+    if (!selectedMedia) {
+      return;
+    }
+
+    setCommentsLoading(true);
+    try {
+      const params = new URLSearchParams({ mediaId: selectedMedia.id });
+      const result = await apiRequest<InstagramCommentReadResponse>(
+        `/api/instagram/comments?${params.toString()}`,
+      );
+      const sendCandidates = result.comments.filter((comment) => comment.wouldSend).length;
+      setSelectedMediaComments(result.comments);
+      setNotice(
+        result.comments.length === 0
+          ? "Instagram returned no comments for this post/reel."
+          : sendCandidates > 0
+            ? `Previewed ${result.comments.length} comments. ${sendCandidates} ready to send; click Send matched DMs to send now.`
+            : `Previewed ${result.comments.length} comments. No new matching comments are ready to send.`,
+      );
+      setError("");
+    } catch (readError) {
+      setError(messageFromError(readError));
+    } finally {
+      setCommentsLoading(false);
+    }
+  }
+
   async function syncCommentsForMedia(mediaId: string, silent = false) {
     try {
       const result = await apiRequest<CommentSyncResponse>(
@@ -457,10 +527,19 @@ function App({ currentView }: AppProps) {
   async function disconnectInstagram() {
     try {
       await apiRequest("/api/auth/instagram/disconnect", { method: "POST" });
-      await loadDashboard();
+      window.location.replace("/");
       setNotice("Instagram disconnected");
     } catch (disconnectError) {
       setError(messageFromError(disconnectError));
+    }
+  }
+
+  async function deleteAccountData() {
+    try {
+      await apiRequest("/api/account/delete", { method: "POST" });
+      window.location.replace("/");
+    } catch (deleteError) {
+      setError(messageFromError(deleteError));
     }
   }
 
@@ -493,6 +572,7 @@ function App({ currentView }: AppProps) {
   function selectContent(item: InstagramMediaItem) {
     setSelectedMediaId(item.id);
     setAutomationScope("selected");
+    setSelectedMediaComments(null);
     const firstRuleForMedia = rules.find((rule) => rule.mediaId === item.id);
     if (firstRuleForMedia) {
       setSelectedRuleId(firstRuleForMedia.id);
@@ -530,43 +610,11 @@ function App({ currentView }: AppProps) {
   const connectionReady = Boolean(status?.connected);
 
   useEffect(() => {
-    if (
-      !connectionReady ||
-      currentView !== "dashboard" ||
-      !selectedMediaId ||
-      !hasActiveRuleForSelectedMedia
-    ) {
-      return;
-    }
-
-    let cancelled = false;
-    async function runAutoSync() {
-      if (autoSyncInFlight.current || cancelled) {
-        return;
-      }
-
-      autoSyncInFlight.current = true;
-      try {
-        await syncCommentsForMedia(selectedMediaId, true);
-      } finally {
-        autoSyncInFlight.current = false;
-      }
-    }
-
-    void runAutoSync();
-    const intervalId = window.setInterval(() => void runAutoSync(), 60_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [connectionReady, currentView, hasActiveRuleForSelectedMedia, selectedMediaId]);
-
-  useEffect(() => {
     if (!statusLoaded || connectionReady) {
       return;
     }
 
-    window.location.replace("/login");
+    window.location.replace("/");
   }, [connectionReady, statusLoaded]);
 
   if (!statusLoaded) {
@@ -578,7 +626,7 @@ function App({ currentView }: AppProps) {
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(253,186,116,0.28),transparent_34%),linear-gradient(180deg,#fff7f4_0%,#fff_38%,#fafafa_100%)] text-foreground">
+    <main className="muse-app-bg min-h-screen overflow-x-hidden text-foreground">
       <div className="mx-auto grid min-h-screen w-full max-w-[1540px] lg:grid-cols-[252px_minmax(0,1fr)]">
         <DesktopSidebar
           currentView={currentView}
@@ -622,9 +670,9 @@ function App({ currentView }: AppProps) {
                 ) : (
                   <Button
                     asChild
-                    className="bg-[linear-gradient(135deg,#f77737,#e1306c_55%,#833ab4)] !text-white shadow-[0_14px_34px_rgba(225,48,108,0.24)] hover:opacity-95"
+                    className="instagram-cta"
                   >
-                    <Link href="/login">
+                    <Link href="/">
                       <InstagramButtonIcon />
                       <span className="hidden sm:inline">Continue with Instagram</span>
                       <span className="sm:hidden">Connect</span>
@@ -669,6 +717,7 @@ function App({ currentView }: AppProps) {
                 status={status}
                 connected={connectionReady}
                 onDisconnect={disconnectInstagram}
+                onDeleteAccountData={deleteAccountData}
               />
             ) : currentView === "activity" ? (
               <ActivityView activity={activity} />
@@ -695,7 +744,10 @@ function App({ currentView }: AppProps) {
                   {currentView === "dashboard" ? (
                     <SelectedMediaCard
                       selectedMedia={selectedMedia}
+                      comments={selectedMediaComments}
+                      commentsLoading={commentsLoading}
                       onCreateRule={createRule}
+                      onReadComments={readSelectedComments}
                       onSyncComments={syncSelectedComments}
                     />
                   ) : null}
@@ -750,8 +802,8 @@ function App({ currentView }: AppProps) {
 
 function AuthTransitionView({ title }: { title: string }) {
   return (
-    <main className="grid min-h-screen place-items-center overflow-x-hidden bg-[radial-gradient(circle_at_15%_10%,rgba(253,186,116,0.38),transparent_30%),radial-gradient(circle_at_85%_10%,rgba(225,48,108,0.22),transparent_28%),linear-gradient(180deg,#fff7f4_0%,#fff_48%,#fafafa_100%)] p-4 text-foreground">
-      <div className="flex items-center gap-3 rounded-2xl border border-border bg-background/90 p-4 shadow-[0_20px_60px_rgba(225,48,108,0.14)]">
+    <main className="muse-page-bg grid min-h-screen place-items-center overflow-x-hidden p-4 text-foreground">
+      <div className="muse-soft-shadow flex items-center gap-3 rounded-2xl border border-border bg-background/90 p-4">
         <MuseInboxLogo />
         <div>
           <p className="text-sm font-black">{title}</p>
@@ -807,7 +859,7 @@ function DesktopSidebar({
           </div>
           {!connected ? (
             <Button asChild className="w-full justify-start" variant="outline">
-              <Link href="/login">
+              <Link href="/">
                 <InstagramButtonIcon />
                 Connect Instagram
               </Link>
@@ -870,7 +922,7 @@ function MobileMenu({
           <p className="text-xs text-muted-foreground">Instagram workspace</p>
           {!connected ? (
             <Button asChild className="mt-3 w-full justify-start" variant="outline">
-              <Link href="/login">
+              <Link href="/">
                 <InstagramButtonIcon />
                 Connect Instagram
               </Link>
@@ -920,7 +972,7 @@ function BrandLockup({ subtitle }: { subtitle: string }) {
   return (
     <Link
       className="flex min-w-0 items-center gap-3 rounded-xl text-foreground"
-      href="/"
+      href="/dashboard"
       aria-label="MuseInbox home"
     >
       <MuseInboxLogo />
@@ -951,8 +1003,7 @@ function NavLink({
     <Link
       className={cn(
         "flex min-w-0 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold text-muted-foreground transition hover:bg-accent hover:text-accent-foreground",
-        active &&
-          "bg-[linear-gradient(135deg,rgba(247,119,55,0.14),rgba(225,48,108,0.13))] text-primary shadow-sm",
+        active && "bg-primary/10 text-primary shadow-sm",
       )}
       href={href}
     >
@@ -1045,11 +1096,17 @@ function ContentBrowser({
 }
 
 function SelectedMediaCard({
+  comments,
+  commentsLoading,
   onCreateRule,
+  onReadComments,
   onSyncComments,
   selectedMedia,
 }: {
+  comments: InstagramCommentReadItem[] | null;
+  commentsLoading: boolean;
   onCreateRule: () => void;
+  onReadComments: () => void;
   onSyncComments: () => void;
   selectedMedia: InstagramMediaItem | null;
 }) {
@@ -1074,9 +1131,18 @@ function SelectedMediaCard({
                   <Plus className="size-4" />
                   New automation
                 </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onReadComments}
+                  disabled={commentsLoading}
+                >
+                  <Eye className="size-4" />
+                  {commentsLoading ? "Reading" : "Read comments"}
+                </Button>
                 <Button type="button" variant="outline" onClick={onSyncComments}>
                   <RefreshCw className="size-4" />
-                  Check comments
+                  Send matched DMs
                 </Button>
                 {selectedMedia.permalink ? (
                   <Button asChild type="button" variant="ghost">
@@ -1091,6 +1157,9 @@ function SelectedMediaCard({
                   </Button>
                 ) : null}
               </div>
+            </div>
+            <div className="min-w-0 md:col-span-2">
+              <CommentReadout comments={comments} loading={commentsLoading} />
             </div>
           </div>
         ) : (
@@ -1108,6 +1177,88 @@ function SelectedMediaCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function CommentReadout({
+  comments,
+  loading,
+}: {
+  comments: InstagramCommentReadItem[] | null;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="grid gap-2 rounded-xl border border-border bg-muted/35 p-3">
+        <Skeleton className="h-4 w-40" />
+        <Skeleton className="h-14 w-full" />
+      </div>
+    );
+  }
+
+  if (!comments) {
+    return (
+      <div className="rounded-xl border border-dashed border-border bg-muted/25 p-3 text-sm font-medium text-muted-foreground">
+        Read comments first to confirm Instagram can see the exact test comment before sending any DM.
+      </div>
+    );
+  }
+
+  if (comments.length === 0) {
+    return (
+      <div className="rounded-xl border border-border bg-muted/35 p-3 text-sm font-semibold text-muted-foreground">
+        Instagram returned no comments for this post/reel.
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-w-0 rounded-xl border border-border bg-background">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+        <div>
+          <p className="text-sm font-black">Comments visible to MuseInbox</p>
+          {comments.some((comment) => comment.wouldSend) ? (
+            <p className="mt-1 text-xs font-semibold text-muted-foreground">
+              Preview only. Use Send matched DMs above to send to ready comments.
+            </p>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {comments.some((comment) => comment.wouldSend) ? (
+            <Badge>{comments.filter((comment) => comment.wouldSend).length} ready</Badge>
+          ) : null}
+          <Badge variant="secondary">{comments.length} found</Badge>
+        </div>
+      </div>
+      <div className="grid max-h-80 min-w-0 gap-2 overflow-auto p-3">
+        {comments.map((comment) => (
+          <article
+            className="min-w-0 rounded-lg border border-border bg-muted/25 p-3"
+            key={comment.id}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate text-xs font-bold text-muted-foreground">
+                  {comment.username ? `@${comment.username}` : "Instagram commenter"}
+                  {comment.timestamp ? ` · ${formatTime(comment.timestamp)}` : ""}
+                </p>
+                <p className="mt-1 break-words text-sm font-semibold">
+                  {comment.text || "(empty comment)"}
+                </p>
+              </div>
+              <Badge variant={comment.wouldSend ? "default" : "secondary"}>
+                {commentReadoutStatus(comment)}
+              </Badge>
+            </div>
+            {comment.matchedRuleName ? (
+              <p className="mt-2 text-xs font-semibold text-muted-foreground">
+                Matched: {comment.matchedRuleName}
+              </p>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -1290,6 +1441,15 @@ function AutomationCards({
               </p>
             </div>
           </div>
+
+          {rule.pauseReason ? (
+            <Alert className="border-amber-200 bg-amber-50 text-amber-950">
+              <AlertTriangle className="size-4 text-amber-600" />
+              <AlertDescription className="text-sm font-semibold">
+                {rule.pauseReason}
+              </AlertDescription>
+            </Alert>
+          ) : null}
 
           <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-end">
             <Button
@@ -1495,13 +1655,16 @@ function ActivityCard({
 
 function SettingsView({
   connected,
+  onDeleteAccountData,
   onDisconnect,
   status,
 }: {
   connected: boolean;
+  onDeleteAccountData: () => void;
   onDisconnect: () => void;
   status: InstagramStatus | null;
 }) {
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const readiness = [
     {
       label: "Instagram app ID",
@@ -1529,6 +1692,7 @@ function SettingsView({
     },
   ];
   const permissions = status?.permissions?.length ? status.permissions : [];
+  const fairUse = status?.fairUse;
 
   return (
     <div className="grid min-w-0 max-w-5xl gap-4">
@@ -1644,7 +1808,7 @@ function SettingsView({
               </>
             ) : (
               <Button asChild className="min-w-0 justify-center">
-                <Link href="/login">
+                <Link href="/">
                   <InstagramButtonIcon />
                   <span className="truncate">Connect Instagram</span>
                 </Link>
@@ -1713,6 +1877,43 @@ function SettingsView({
         </Card>
       </div>
 
+      <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92 shadow-sm">
+        <CardHeader>
+          <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
+            Free forever
+          </CardDescription>
+          <CardTitle>Fair-use limits</CardTitle>
+          <p className="mt-2 text-sm text-muted-foreground">
+            MuseInbox is free forever. These limits protect Instagram accounts
+            and keep the service reliable for everyone.
+          </p>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-3">
+          <UsageTile
+            label="Active automations"
+            used={
+              fairUse
+                ? fairUse.limits.activeAutomations - fairUse.remaining.activeAutomations
+                : 0
+            }
+            limit={fairUse?.limits.activeAutomations}
+            remaining={fairUse?.remaining.activeAutomations}
+          />
+          <UsageTile
+            label="DM send attempts today"
+            used={fairUse?.usage.dmSendAttempts ?? 0}
+            limit={fairUse?.limits.dmSendAttemptsPerDay}
+            remaining={fairUse?.remaining.dmSendAttempts}
+          />
+          <UsageTile
+            label="Comment checks today"
+            used={fairUse?.usage.commentChecks ?? 0}
+            limit={fairUse?.limits.commentChecksPerDay}
+            remaining={fairUse?.remaining.commentChecks}
+          />
+        </CardContent>
+      </Card>
+
       <Card className="border-border/80 bg-card/92 shadow-sm">
         <CardHeader>
           <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
@@ -1736,6 +1937,86 @@ function SettingsView({
           )}
         </CardContent>
       </Card>
+
+      <Card className="border-destructive/25 bg-card/92 shadow-sm">
+        <CardHeader>
+          <CardDescription className="font-bold uppercase tracking-[0.16em] text-destructive">
+            Data
+          </CardDescription>
+          <CardTitle>Delete MuseInbox data</CardTitle>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Remove saved automations, activity, processed comment history, and
+            the stored Instagram connection for this account.
+          </p>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 sm:flex-row">
+          <Button asChild variant="outline">
+            <Link href="/data-deletion">Data deletion instructions</Link>
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={() => setDeleteDialogOpen(true)}
+          >
+            <Trash2 className="size-4" />
+            Delete all my data
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete all MuseInbox data?</DialogTitle>
+            <DialogDescription>
+              This removes this Instagram account's saved automations, activity,
+              processed comment history, and stored connection. This cannot be
+              undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:space-x-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="button" variant="destructive" onClick={onDeleteAccountData}>
+              Delete my data
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function UsageTile({
+  label,
+  limit,
+  remaining,
+  used,
+}: {
+  label: string;
+  limit?: number;
+  remaining?: number;
+  used: number;
+}) {
+  return (
+    <div className="min-w-0 rounded-xl border border-border bg-background p-4">
+      <p className="text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-2 text-2xl font-black">
+        {used}
+        <span className="text-sm font-bold text-muted-foreground">
+          /{limit ?? "-"}
+        </span>
+      </p>
+      <p className="mt-1 text-sm font-semibold text-muted-foreground">
+        {remaining ?? 0} remaining
+      </p>
     </div>
   );
 }
@@ -1952,7 +2233,7 @@ function MediaThumb({
   ) : (
     <span
       className={cn(
-        "grid shrink-0 place-items-center rounded-xl bg-[linear-gradient(135deg,rgba(247,119,55,0.18),rgba(225,48,108,0.14))] text-primary",
+        "grid shrink-0 place-items-center rounded-xl bg-primary/10 text-primary",
         className,
       )}
     >
@@ -1996,6 +2277,26 @@ function RuleStatusBadge({ active }: { active: boolean }) {
 
 function triggerLabel(rule: Rule) {
   return rule.triggerType === "any" ? "Any word" : `Keyword: ${rule.keyword}`;
+}
+
+function commentReadoutStatus(comment: InstagramCommentReadItem) {
+  if (comment.wouldSend) {
+    return "Ready to send";
+  }
+
+  if (comment.skippedReason === "reply_comment") {
+    return "Reply comment";
+  }
+
+  if (comment.skippedReason === "already_processed") {
+    return "Already used";
+  }
+
+  if (comment.skippedReason === "older_than_rule") {
+    return "Older than rule";
+  }
+
+  return "No match";
 }
 
 async function apiRequest<T>(path: string, options: RequestInit = {}) {

@@ -6,28 +6,32 @@ import { MuseInboxLogo } from "../../src/App";
 
 const sections = [
   {
-    title: "Information We Collect",
-    body: "When you connect Instagram, we store your Instagram account identifier, access token, selected post or reel details, automation rules, message templates, links, and local activity logs.",
+    title: "Use of MuseInbox",
+    body: "MuseInbox is provided to help Instagram Business and Creator accounts manage comment-to-direct-message workflows. You are responsible for the automations, links, and messages you create.",
   },
   {
-    title: "How We Use Information",
-    body: "We use this information only to display your Instagram content, match comments to your rules, and send the message you configured.",
+    title: "Instagram Account Access",
+    body: "You may connect only Instagram accounts that you own or are authorized to manage. You can disconnect the account from MuseInbox settings at any time.",
   },
   {
-    title: "Storage and Security",
-    body: "Access tokens are encrypted before storage. We do not sell Instagram data, use it for advertising, or use it to train AI models.",
+    title: "Messaging and Compliance",
+    body: "You are responsible for making sure your automated replies follow Instagram rules, Meta Platform Terms, and any laws that apply to your messages.",
   },
   {
-    title: "Disconnecting",
-    body: "You can disconnect Instagram from the MuseInbox settings page. This removes the stored connection token from the app.",
+    title: "Free Forever and Fair Use",
+    body: "MuseInbox is free forever, with fair-use limits that protect Instagram accounts and service reliability. The app may limit active automations, daily comment checks, daily DM send attempts, or pause automations after repeated Instagram send failures.",
   },
   {
-    title: "Deleting Your Data",
-    body: "You can delete MuseInbox data from Settings when signed in, or use the public data deletion instructions if you cannot access the app.",
+    title: "Service Availability",
+    body: "MuseInbox depends on Meta APIs and webhook delivery. Access may change if Meta changes permissions, review status, API behavior, or account eligibility.",
+  },
+  {
+    title: "Limitation of Liability",
+    body: "MuseInbox is provided as-is. We are not responsible for lost messages, failed automations, rejected API calls, account restrictions, or third-party platform changes.",
   },
 ];
 
-export default function PrivacyPage() {
+export default function TermsPage() {
   return (
     <main className="muse-page-bg min-h-screen overflow-x-hidden p-4 text-foreground sm:p-8">
       <Card className="muse-panel-shadow mx-auto max-w-3xl border-border/80 bg-card/92">
@@ -43,21 +47,20 @@ export default function PrivacyPage() {
                 MuseInbox
               </strong>
               <small className="mt-1 block text-xs font-bold text-muted-foreground">
-                Privacy policy
+                Terms of service
               </small>
             </span>
           </Link>
 
           <Badge className="mb-4 bg-primary/10 text-primary hover:bg-primary/10">
-            Effective 12 June 2026
+            Effective 13 June 2026
           </Badge>
           <h1 className="text-4xl font-black tracking-tight sm:text-5xl">
-            Privacy Policy
+            Terms of Service
           </h1>
           <p className="mt-4 text-base leading-7 text-muted-foreground">
-            MuseInbox helps Instagram Business and Creator accounts create
-            comment automations that send manually configured direct-message
-            replies.
+            These terms describe the basic rules for using MuseInbox to manage
+            Instagram comment automations.
           </p>
 
           <Separator className="my-8" />
@@ -77,7 +80,7 @@ export default function PrivacyPage() {
             <section>
               <h2 className="text-xl font-black tracking-tight">Contact</h2>
               <p className="mt-2 leading-7 text-muted-foreground">
-                For privacy questions, contact us at{" "}
+                For questions about these terms, contact{" "}
                 <a
                   className="font-bold text-primary underline-offset-4 hover:underline"
                   href="mailto:pranushathokala895@gmail.com"
