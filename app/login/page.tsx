@@ -93,7 +93,7 @@ export default function LoginPage() {
                 <Badge variant="secondary">Live</Badge>
               </div>
 
-              <div className="aspect-square rounded-[1.4rem] bg-[linear-gradient(145deg,oklch(0.9_0.018_220),oklch(0.68_0.05_235))] p-4">
+              <div className="aspect-square rounded-[1.4rem] bg-[linear-gradient(145deg,#e8f3f1,#0f766e)] p-4">
                 <div className="flex h-full flex-col justify-end rounded-[1rem] bg-slate-950/10 p-4 text-white">
                   <p className="max-w-[230px] text-2xl font-black leading-tight">
                     Comment “LINK” and get the guide in DM
@@ -106,14 +106,14 @@ export default function LoginPage() {
                   <MessageCircle className="size-4 text-primary" />
                   <span className="text-sm font-bold">link please</span>
                 </div>
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
+                <div className="muse-alert-success rounded-2xl border p-3">
                   <div className="flex items-center gap-3">
-                    <CheckCircle2 className="size-5 text-emerald-600" />
+                    <CheckCircle2 className="muse-text-success size-5" />
                     <div>
-                      <strong className="block text-sm font-black text-emerald-950">
+                      <strong className="block text-sm font-black">
                         Matched: Send product link
                       </strong>
-                      <span className="text-sm font-medium text-emerald-800">
+                      <span className="text-sm font-medium">
                         DM reply is ready to send.
                       </span>
                     </div>

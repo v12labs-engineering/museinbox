@@ -191,7 +191,7 @@ function formatTime(value: string) {
 export function MuseInboxLogo() {
   return (
     <span
-      className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-[linear-gradient(135deg,#ff6a3d,#e1306c_52%,#833ab4)] shadow-[0_14px_30px_rgba(15,23,42,0.14)]"
+      className="instagram-gradient grid size-11 shrink-0 place-items-center rounded-[14px] shadow-[0_14px_30px_rgb(24_24_27/0.14)]"
       aria-hidden="true"
     >
       <svg className="size-11" viewBox="0 0 48 48" role="img">
@@ -202,11 +202,11 @@ export function MuseInboxLogo() {
         />
         <path
           d="M18.5 21.5h14M18.5 27.5h8.5"
-          stroke="#e1306c"
+          stroke="var(--instagram-pink)"
           strokeLinecap="round"
           strokeWidth="3"
         />
-        <circle cx="34.5" cy="14" r="4.25" fill="#ffdc80" />
+        <circle cx="34.5" cy="14" r="4.25" fill="var(--instagram-gold)" />
       </svg>
     </span>
   );
@@ -686,8 +686,8 @@ function App({ currentView }: AppProps) {
 
           <div className="space-y-4 px-4 py-4 sm:px-6 lg:px-8">
             {notice ? (
-              <Alert className="border-emerald-200 bg-emerald-50 text-emerald-950">
-                <CheckCircle2 className="size-4 text-emerald-600" />
+              <Alert className="muse-alert-success">
+                <CheckCircle2 className="muse-text-success size-4" />
                 <AlertDescription className="font-semibold">
                   {notice}
                 </AlertDescription>
@@ -695,16 +695,16 @@ function App({ currentView }: AppProps) {
             ) : null}
 
             {error ? (
-              <Alert className="border-amber-200 bg-amber-50 text-amber-950">
-                <AlertTriangle className="size-4 text-amber-600" />
+              <Alert className="muse-alert-warning">
+                <AlertTriangle className="muse-text-warning size-4" />
                 <AlertTitle>Something needs attention.</AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             ) : null}
 
             {activeAnyRules.length > 1 ? (
-              <Alert className="border-amber-200 bg-amber-50 text-amber-950">
-                <AlertTriangle className="size-4 text-amber-600" />
+              <Alert className="muse-alert-warning">
+                <AlertTriangle className="muse-text-warning size-4" />
                 <AlertTitle>Multiple “any word” rules are active.</AlertTitle>
                 <AlertDescription>
                   Preview will use “{activeAnyRules[0].name}”. Turn off the
@@ -808,7 +808,7 @@ function ConnectionProgressBar() {
       aria-label="Loading"
       role="progressbar"
     >
-      <div className="muse-progress-bar h-full w-1/3 bg-[linear-gradient(90deg,#f77737,#e1306c,#833ab4)]" />
+      <div className="instagram-gradient muse-progress-bar h-full w-1/3" />
     </div>
   );
 }
@@ -850,7 +850,7 @@ function DesktopSidebar({
             <span
               className={cn(
                 "size-2.5 rounded-full",
-                connected ? "bg-emerald-500" : "bg-amber-500",
+                connected ? "muse-status-success" : "muse-status-warning",
               )}
             />
             <div className="min-w-0">
@@ -1448,8 +1448,8 @@ function AutomationCards({
           </div>
 
           {rule.pauseReason ? (
-            <Alert className="border-amber-200 bg-amber-50 text-amber-950">
-              <AlertTriangle className="size-4 text-amber-600" />
+            <Alert className="muse-alert-warning">
+              <AlertTriangle className="muse-text-warning size-4" />
               <AlertDescription className="text-sm font-semibold">
                 {rule.pauseReason}
               </AlertDescription>
@@ -1532,7 +1532,7 @@ function PreviewAndActivity({
           <div className="min-h-36 rounded-xl border border-border bg-muted/45 p-4">
             {matchedRule ? (
               <>
-                <Badge className="mb-2 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
+                <Badge className="muse-badge-success mb-2">
                   Matched
                 </Badge>
                 <h3 className="font-black">{matchedRule.name}</h3>
@@ -1690,8 +1690,8 @@ function SettingsView({
           <Badge
             className={cn(
               connected
-                ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100"
-                : "bg-amber-100 text-amber-800 hover:bg-amber-100",
+                ? "muse-badge-success"
+                : "muse-badge-warning",
             )}
           >
             {connected ? "Connected" : "Not connected"}
@@ -1718,8 +1718,8 @@ function SettingsView({
             className={cn(
               "min-w-0 overflow-hidden rounded-xl border p-4",
               status?.canSendPrivateReplies
-                ? "border-emerald-200 bg-emerald-50 text-emerald-950"
-                : "border-amber-200 bg-amber-50 text-amber-950",
+                ? "muse-alert-success"
+                : "muse-alert-warning",
             )}
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1741,8 +1741,8 @@ function SettingsView({
               <Badge
                 className={
                   status?.canSendPrivateReplies
-                    ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100"
-                    : "bg-amber-100 text-amber-800 hover:bg-amber-100"
+                    ? "muse-badge-success"
+                    : "muse-badge-warning"
                 }
               >
                 {status?.canSendPrivateReplies ? "DM ready" : "Needs Instagram"}
@@ -1751,7 +1751,7 @@ function SettingsView({
           </div>
 
           {!status?.canSendPrivateReplies ? (
-            <Alert className="border-amber-200 bg-amber-50 text-amber-950">
+            <Alert className="muse-alert-warning">
               <AlertTriangle className="size-4" />
               <AlertTitle>Instagram connection needs attention</AlertTitle>
               <AlertDescription>
@@ -1762,7 +1762,7 @@ function SettingsView({
           ) : null}
 
           {status?.webhookSubscriptionError ? (
-            <Alert className="min-w-0 overflow-hidden border-amber-200 bg-amber-50 text-amber-950">
+            <Alert className="muse-alert-warning min-w-0 overflow-hidden">
               <AlertTriangle className="size-4" />
               <AlertTitle>Webhook subscription needs attention</AlertTitle>
               <AlertDescription className="min-w-0 whitespace-pre-wrap break-words text-sm">
@@ -2028,8 +2028,8 @@ function AutomationDialog({
               />
             </div>
           ) : (
-            <Alert className="border-emerald-200 bg-emerald-50 text-emerald-950">
-              <CheckCircle2 className="size-4 text-emerald-600" />
+            <Alert className="muse-alert-success">
+              <CheckCircle2 className="muse-text-success size-4" />
               <AlertDescription>
                 Matches any comment when no keyword rule matches first.
               </AlertDescription>
@@ -2187,7 +2187,7 @@ function EmptyState({
 
 function RuleStatusBadge({ active }: { active: boolean }) {
   return active ? (
-    <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
+    <Badge className="muse-badge-success">
       Active
     </Badge>
   ) : (
