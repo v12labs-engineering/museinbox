@@ -19,6 +19,11 @@ Open `http://127.0.0.1:5173`.
 
 Copy `.env.example` to `.env.local` and fill in the Instagram/Meta values.
 
+When the Meta app is still in development mode, the Instagram account you use
+to sign in must be added to the app's roles in the Meta App Dashboard and must
+accept the invitation before OAuth will work. Otherwise Meta can redirect back
+with `Insufficient developer role`.
+
 ## Supabase Storage
 
 Run `supabase/schema.sql` in the Supabase SQL editor, then set these environment variables:

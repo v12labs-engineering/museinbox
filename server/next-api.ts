@@ -500,7 +500,10 @@ async function handleOAuthCallback(
   const error = requestUrl.searchParams.get("error");
   const errorDescription = requestUrl.searchParams.get("error_description");
   if (error) {
-    return redirectToApp(request, `${providerLabel(provider)} connection failed: ${errorDescription ?? error}`);
+    return redirectToApp(
+      request,
+      formatOAuthProviderError(provider, error, errorDescription),
+    );
   }
 
   const code = requestUrl.searchParams.get("code");
@@ -1957,6 +1960,20 @@ function redirectToApp(request: Request, message: string, cookies: string[] = []
   const url = new URL("/dashboard", request.url);
   url.searchParams.set("instagram", message);
   return redirect(url.toString(), cookies);
+}
+
+function formatOAuthProviderError(
+  provider: "instagram" | "facebook",
+  error: string,
+  errorDescription: string | null,
+) {
+  const rawMessage = errorDescription ?? error;
+  if (/insufficient developer role/i.test(rawMessage)) {
+    const accountType = provider === "facebook" ? "Facebook account" : "Instagram account";
+    return `${providerLabel(provider)} connection blocked by Meta: this ${accountType} is not allowed to test this app yet. Add the account in the Meta App Dashboard app roles or switch the app to Live after permissions are approved.`;
+  }
+
+  return `${providerLabel(provider)} connection failed: ${rawMessage}`;
 }
 
 function getInstagramAppId() {

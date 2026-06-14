@@ -315,7 +315,9 @@ function App({ currentView }: AppProps) {
       const params = new URLSearchParams(window.location.search);
       const instagramMessage = params.get("instagram");
       if (instagramMessage) {
-        setNotice(instagramMessage);
+        if (!/^Instagram connected\./i.test(instagramMessage)) {
+          setNotice(instagramMessage);
+        }
         window.history.replaceState({}, "", window.location.pathname);
       }
     } catch (loadError) {
@@ -617,24 +619,23 @@ function App({ currentView }: AppProps) {
     window.location.replace("/");
   }, [connectionReady, statusLoaded]);
 
-  if (!statusLoaded) {
-    return <AuthTransitionView title="Checking Instagram connection" />;
-  }
-
   if (!connectionReady) {
-    return <AuthTransitionView title="Opening login" />;
+    if (statusLoaded) {
+      return <AuthTransitionView />;
+    }
   }
 
   return (
     <main className="muse-app-bg min-h-screen overflow-x-hidden text-foreground">
-      <div className="mx-auto grid min-h-screen w-full max-w-[1540px] lg:grid-cols-[252px_minmax(0,1fr)]">
+      {!statusLoaded ? <ConnectionProgressBar /> : null}
+      <div className="mx-auto grid min-h-screen w-full max-w-[1540px] lg:h-screen lg:grid-cols-[252px_minmax(0,1fr)] lg:overflow-hidden">
         <DesktopSidebar
           currentView={currentView}
           connected={connectionReady}
           onDisconnect={disconnectInstagram}
         />
 
-        <section className="min-w-0 pb-24 lg:pb-0">
+        <section className="min-w-0 pb-24 lg:h-screen lg:overflow-y-auto lg:pb-0">
           <header className="sticky top-0 z-30 border-b border-border/70 bg-background/88 px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8">
             <div className="flex min-w-0 items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
@@ -667,7 +668,7 @@ function App({ currentView }: AppProps) {
                       Refresh
                     </Button>
                   </>
-                ) : (
+                ) : statusLoaded ? (
                   <Button
                     asChild
                     className="instagram-cta"
@@ -678,7 +679,7 @@ function App({ currentView }: AppProps) {
                       <span className="sm:hidden">Connect</span>
                     </Link>
                   </Button>
-                )}
+                ) : null}
               </div>
             </div>
           </header>
@@ -800,18 +801,22 @@ function App({ currentView }: AppProps) {
   );
 }
 
-function AuthTransitionView({ title }: { title: string }) {
+function ConnectionProgressBar() {
   return (
-    <main className="muse-page-bg grid min-h-screen place-items-center overflow-x-hidden p-4 text-foreground">
-      <div className="muse-soft-shadow flex items-center gap-3 rounded-2xl border border-border bg-background/90 p-4">
-        <MuseInboxLogo />
-        <div>
-          <p className="text-sm font-black">{title}</p>
-          <p className="text-xs font-semibold text-muted-foreground">
-            MuseInbox
-          </p>
-        </div>
-      </div>
+    <div
+      className="fixed inset-x-0 top-0 z-50 h-1 overflow-hidden bg-primary/10"
+      aria-label="Loading"
+      role="progressbar"
+    >
+      <div className="muse-progress-bar h-full w-1/3 bg-[linear-gradient(90deg,#f77737,#e1306c,#833ab4)]" />
+    </div>
+  );
+}
+
+function AuthTransitionView() {
+  return (
+    <main className="muse-page-bg min-h-screen overflow-x-hidden text-foreground">
+      <ConnectionProgressBar />
     </main>
   );
 }
@@ -826,7 +831,7 @@ function DesktopSidebar({
   onDisconnect: () => void;
 }) {
   return (
-    <aside className="sticky top-0 hidden h-screen min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] border-r border-border/70 bg-background/86 p-4 backdrop-blur-xl lg:grid">
+    <aside className="hidden h-screen min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] border-r border-border/70 bg-background/86 p-4 backdrop-blur-xl lg:grid">
       <BrandLockup subtitle="Business or creator" />
       <nav className="mt-7 grid content-start gap-1">
         {navItems.map((item) => (
@@ -1665,32 +1670,6 @@ function SettingsView({
   status: InstagramStatus | null;
 }) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const readiness = [
-    {
-      label: "Instagram app ID",
-      ready: Boolean(status?.hasAppId),
-    },
-    {
-      label: "Instagram app secret",
-      ready: Boolean(status?.hasAppSecret),
-    },
-    {
-      label: "Instagram access",
-      ready: Boolean(status?.hasAccessToken),
-    },
-    {
-      label: "Instagram professional account",
-      ready: Boolean(status?.instagramUserId),
-    },
-    {
-      label: "Verify token",
-      ready: Boolean(status?.hasVerifyToken),
-    },
-    {
-      label: "Instagram webhook subscription",
-      ready: Boolean(status?.webhookSubscribedAt),
-    },
-  ];
   const permissions = status?.permissions?.length ? status.permissions : [];
   const fairUse = status?.fairUse;
 
@@ -1817,65 +1796,6 @@ function SettingsView({
           </div>
         </CardContent>
       </Card>
-
-      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-        <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92 shadow-sm">
-          <CardHeader>
-            <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
-              Replies
-            </CardDescription>
-            <CardTitle>Reply behavior</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="min-w-0 rounded-xl border border-border bg-background p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="font-black">
-                    {status?.dryRun ? "Dry run" : "Live replies"}
-                  </h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {status?.dryRun
-                      ? "Matches are logged without sending Instagram DMs."
-                      : "Matching comments can trigger real Instagram replies."}
-                  </p>
-                </div>
-                <Badge variant={status?.dryRun ? "secondary" : "default"}>
-                  {status?.dryRun ? "Testing" : "Live"}
-                </Badge>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92 shadow-sm">
-          <CardHeader>
-            <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
-              Setup
-            </CardDescription>
-            <CardTitle>App readiness</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-2">
-            {readiness.map((item) => (
-              <div
-                className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background p-3"
-                key={item.label}
-              >
-                <span className="font-bold">{item.label}</span>
-                <Badge
-                  className={
-                    item.ready
-                      ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100"
-                      : ""
-                  }
-                  variant={item.ready ? "default" : "secondary"}
-                >
-                  {item.ready ? "Ready" : "Missing"}
-                </Badge>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
 
       <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92 shadow-sm">
         <CardHeader>
