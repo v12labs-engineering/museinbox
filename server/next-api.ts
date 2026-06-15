@@ -31,13 +31,8 @@ type DataFile = {
 type InstagramIntegration = {
   accessToken?: string;
   encryptedAccessToken?: string;
-  pageAccessToken?: string;
-  encryptedPageAccessToken?: string;
-  pageId?: string;
-  pageName?: string;
   tokenType?: string;
-  loginProvider?: "instagram" | "facebook";
-  facebookUserId?: string;
+  loginProvider?: "instagram";
   userId?: string;
   webhookAccountIds?: string[];
   permissions?: string[];
@@ -142,12 +137,7 @@ const defaultScopes = [
   "instagram_business_manage_messages",
   "instagram_business_manage_comments",
 ].join(",");
-const defaultFacebookScopes = [
-  "pages_show_list",
-  "pages_read_engagement",
-  "pages_messaging",
-  "business_management",
-].join(",");
+const requiredInstagramPermissions = defaultScopes.split(",");
 
 const starterRules: Rule[] = [
   {
@@ -214,25 +204,14 @@ export async function handleApiRequest(request: Request) {
     }
 
     if (request.method === "GET" && pathname === "/api/auth/instagram/start") {
-      return startOAuth(request, "instagram");
-    }
-
-    if (request.method === "GET" && pathname === "/api/auth/facebook/start") {
-      return startOAuth(request, "facebook");
+      return startOAuth(request);
     }
 
     if (
       request.method === "GET" &&
       pathname === "/api/auth/instagram/callback"
     ) {
-      return handleOAuthCallback(request, requestUrl, "instagram");
-    }
-
-    if (
-      request.method === "GET" &&
-      pathname === "/api/auth/facebook/callback"
-    ) {
-      return handleOAuthCallback(request, requestUrl, "facebook");
+      return handleOAuthCallback(request, requestUrl);
     }
 
     if (
@@ -278,9 +257,7 @@ export async function handleApiRequest(request: Request) {
       return json(200, {
         webhookPath: "/api/instagram/webhook",
         oauthStartPath: "/api/auth/instagram/start",
-        facebookOAuthStartPath: "/api/auth/facebook/start",
         oauthCallbackPath: "/api/auth/instagram/callback",
-        facebookOAuthCallbackPath: "/api/auth/facebook/callback",
         oauthRedirectUri:
           data.integration?.oauthRedirectUri ??
           process.env.INSTAGRAM_OAUTH_REDIRECT_URI,
@@ -288,32 +265,23 @@ export async function handleApiRequest(request: Request) {
         lastOAuthError: data.integration?.lastOAuthError,
         graphVersion: getGraphVersion(),
         hasAccessToken: Boolean(getAccessToken(data)),
-        hasPageAccess: Boolean(getPageAccessToken(data)),
         connected: isMetaConnected(data),
-        tokenSource:
-          data.integration?.accessToken || data.integration?.pageAccessToken
-            ? "oauth"
-            : "env",
+        tokenSource: data.integration?.accessToken ? "oauth" : "env",
         connectedAt: data.integration?.connectedAt,
         expiresAt: data.integration?.expiresAt,
         instagramUserId: data.integration?.userId,
         webhookAccountIds: data.integration?.webhookAccountIds ?? [],
-        facebookUserId: data.integration?.facebookUserId,
         loginProvider: data.integration?.loginProvider,
-        pageId: data.integration?.pageId,
-        pageName: data.integration?.pageName,
         canSendPrivateReplies: canSendPrivateReplies(data),
+        privateReplyReadiness: privateReplyReadiness(data),
         permissions: data.integration?.permissions ?? [],
         webhookSubscribedAt: data.integration?.webhookSubscribedAt,
         webhookSubscriptionCheckedAt:
           data.integration?.webhookSubscriptionCheckedAt,
         webhookSubscriptionError: data.integration?.webhookSubscriptionError,
         hasAppId: Boolean(getInstagramAppId()),
-        hasFacebookAppId: Boolean(getFacebookAppId()),
-        hasFacebookLoginConfigId: Boolean(getFacebookLoginConfigId()),
         hasVerifyToken: Boolean(process.env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN),
         hasAppSecret: Boolean(process.env.INSTAGRAM_APP_SECRET),
-        hasFacebookAppSecret: Boolean(getFacebookAppSecret()),
         dryRun: process.env.INSTAGRAM_DRY_RUN === "true",
         fairUse: fairUseSummary(data),
       });
@@ -442,30 +410,20 @@ async function handleActivity(request: Request) {
   return json(405, { error: "Method not allowed" });
 }
 
-async function startOAuth(request: Request, provider: "instagram" | "facebook") {
-  const clientId = provider === "facebook" ? getFacebookAppId() : getInstagramAppId();
-  const clientSecret =
-    provider === "facebook" ? getFacebookAppSecret() : process.env.INSTAGRAM_APP_SECRET;
+async function startOAuth(request: Request) {
+  const clientId = getInstagramAppId();
+  const clientSecret = process.env.INSTAGRAM_APP_SECRET;
   if (!clientId || !clientSecret) {
     return json(400, {
-      error:
-        provider === "facebook"
-          ? "Missing FACEBOOK_APP_ID or FACEBOOK_APP_SECRET in .env.local"
-          : "Missing INSTAGRAM_APP_ID or INSTAGRAM_APP_SECRET in .env.local",
+      error: "Missing INSTAGRAM_APP_ID or INSTAGRAM_APP_SECRET in .env.local",
     });
   }
 
-  const redirectUri = getOAuthRedirectUri(request, provider);
+  const redirectUri = getOAuthRedirectUri(request);
   const state = randomUUID();
 
-  const scopes =
-    provider === "facebook"
-      ? process.env.FACEBOOK_OAUTH_SCOPES ?? defaultFacebookScopes
-      : process.env.INSTAGRAM_OAUTH_SCOPES ?? defaultScopes;
-  const authBase =
-    provider === "facebook"
-      ? `https://www.facebook.com/${getGraphVersion()}/dialog/oauth`
-      : "https://www.instagram.com/oauth/authorize";
+  const scopes = process.env.INSTAGRAM_OAUTH_SCOPES ?? defaultScopes;
+  const authBase = "https://www.instagram.com/oauth/authorize";
   const authUrl = [
     authBase,
     `force_reauth=true`,
@@ -475,17 +433,15 @@ async function startOAuth(request: Request, provider: "instagram" | "facebook") 
     `state=${encodeURIComponent(state)}`,
     `scope=${encodeURIComponent(scopes)}`,
   ].join("&").replace("&", "?");
-  const finalAuthUrl = addFacebookLoginConfig(authUrl, provider);
 
-  return redirect(finalAuthUrl, [
+  return redirect(authUrl, [
     buildCookie(
       oauthCookieName,
       signCookieValue({
         state,
-        provider,
         redirectUri,
         oauthStartedAt: new Date().toISOString(),
-        oauthAuthorizeUrl: finalAuthUrl,
+        oauthAuthorizeUrl: authUrl,
       }),
       10 * 60,
     ),
@@ -495,14 +451,13 @@ async function startOAuth(request: Request, provider: "instagram" | "facebook") 
 async function handleOAuthCallback(
   request: Request,
   requestUrl: URL,
-  provider: "instagram" | "facebook",
 ) {
   const error = requestUrl.searchParams.get("error");
   const errorDescription = requestUrl.searchParams.get("error_description");
   if (error) {
     return redirectToApp(
       request,
-      formatOAuthProviderError(provider, error, errorDescription),
+      formatOAuthProviderError(error, errorDescription),
     );
   }
 
@@ -510,26 +465,21 @@ async function handleOAuthCallback(
   const state = requestUrl.searchParams.get("state");
   const oauthSession = readSignedCookie<{
     state?: string;
-    provider?: "instagram" | "facebook";
     redirectUri?: string;
     oauthAuthorizeUrl?: string;
   }>(request, oauthCookieName);
   if (!code) {
-    return redirectToApp(request, `${providerLabel(provider)} connection failed: missing OAuth code`);
+    return redirectToApp(request, "Instagram connection failed: missing OAuth code");
   }
 
   if (
     !oauthSession?.state ||
-    state !== oauthSession.state ||
-    (oauthSession.provider && oauthSession.provider !== provider)
+    state !== oauthSession.state
   ) {
-    return redirectToApp(request, `${providerLabel(provider)} connection failed: invalid OAuth state`);
+    return redirectToApp(request, "Instagram connection failed: invalid OAuth state");
   }
 
-  const redirectUri = oauthSession.redirectUri ?? getOAuthRedirectUri(request, provider);
-  if (provider === "facebook") {
-    return handleFacebookOAuthCallback(request, code, redirectUri, oauthSession.oauthAuthorizeUrl);
-  }
+  const redirectUri = oauthSession.redirectUri ?? getOAuthRedirectUri(request);
 
   let shortToken: Awaited<ReturnType<typeof exchangeCodeForShortToken>>;
   try {
@@ -579,72 +529,6 @@ async function handleOAuthCallback(
       signCookieValue({
         stateId,
         instagramUserId: userId,
-        signedInAt: new Date().toISOString(),
-      }),
-      60 * 60 * 24 * 60,
-    ),
-    clearCookie(oauthCookieName),
-  ]);
-}
-
-async function handleFacebookOAuthCallback(
-  request: Request,
-  code: string,
-  redirectUri: string,
-  oauthAuthorizeUrl?: string,
-) {
-  let shortToken: Awaited<ReturnType<typeof exchangeFacebookCodeForToken>>;
-  try {
-    shortToken = await exchangeFacebookCodeForToken(code, redirectUri);
-  } catch (exchangeError) {
-    const stateId = getRequestStateId(request);
-    const data = await readData(stateId);
-    data.integration = {
-      ...data.integration,
-      lastOAuthError:
-        exchangeError instanceof Error ? exchangeError.message : "Unknown OAuth error",
-    };
-    await writeData(data, stateId);
-    throw exchangeError;
-  }
-
-  const longToken = await exchangeForLongLivedFacebookToken(shortToken.access_token);
-  const profile = await fetchFacebookProfile(longToken.access_token);
-  const page = await fetchConnectedInstagramPage(longToken.access_token);
-  const stateId = accountStateId(page.instagramUserId);
-  const data = await readData(stateId);
-  data.integration = {
-    ...data.integration,
-    accessToken: data.integration?.accessToken,
-    pageAccessToken: page.accessToken,
-    pageId: page.id,
-    pageName: page.name,
-    loginProvider: "facebook",
-    facebookUserId: profile.id,
-    userId: page.instagramUserId,
-    webhookAccountIds: [
-      page.instagramUserId,
-      ...(data.integration?.webhookAccountIds ?? []),
-    ]
-      .filter((value): value is string => Boolean(value))
-      .filter((value, index, values) => values.indexOf(value) === index),
-    permissions: longToken.permissions ?? data.integration?.permissions ?? [],
-    connectedAt: new Date().toISOString(),
-    expiresAt: longToken.expires_in
-      ? new Date(Date.now() + longToken.expires_in * 1000).toISOString()
-      : data.integration?.expiresAt,
-    oauthRedirectUri: redirectUri,
-    oauthAuthorizeUrl,
-    lastOAuthError: undefined,
-  };
-  await writeData(data, stateId);
-  return redirectToApp(request, "Facebook Page connected. Private replies are ready.", [
-    buildCookie(
-      sessionCookieName,
-      signCookieValue({
-        stateId,
-        instagramUserId: page.instagramUserId,
-        facebookUserId: profile.id,
         signedInAt: new Date().toISOString(),
       }),
       60 * 60 * 24 * 60,
@@ -761,8 +645,6 @@ async function sendPrivateReply(
     commentId: safeId(commentId),
     hasInstagramAccess: Boolean(getInstagramAccessToken(data)),
     instagramUserId: safeId(getInstagramUserId(data)),
-    hasPageAccess: Boolean(getPageAccessToken(data)),
-    pageId: safeId(getPageId(data)),
     loginProvider: data.integration?.loginProvider,
     permissions: data.integration?.permissions,
     messageLength: message.length,
@@ -785,27 +667,6 @@ async function sendPrivateReply(
     );
     if (instagramResult.ok) {
       return instagramResult;
-    }
-
-    const pageId = getPageId(data);
-    const pageAccessToken = getPageAccessToken(data);
-    if (pageId && pageAccessToken) {
-      const pageResult = await sendPagePrivateReply(
-        pageId,
-        commentId,
-        message,
-        pageAccessToken,
-        diagnosticId,
-      );
-      if (pageResult.ok) {
-        return pageResult;
-      }
-
-      return {
-        ok: false,
-        error: joinSendErrors(instagramResult.error, pageResult.error),
-        attempts: [...(instagramResult.attempts ?? []), ...(pageResult.attempts ?? [])],
-      };
     }
 
     return instagramResult;
@@ -909,60 +770,6 @@ async function postInstagramPrivateReply(
   return { ok: true, status: "sent" as const, attempts: [`${route}: sent`] };
 }
 
-async function sendPagePrivateReply(
-  pageId: string,
-  commentId: string,
-  message: string,
-  accessToken: string,
-  diagnosticId: string,
-): Promise<SendReplyResult> {
-  const route = "Facebook Page messages";
-  logDiagnostic("private_reply_route_attempt", {
-    diagnosticId,
-    route,
-    pageId: safeId(pageId),
-    commentId: safeId(commentId),
-    host: "graph.facebook.com",
-  });
-
-  const result = await fetch(
-    `https://graph.facebook.com/${getGraphVersion()}/${encodeURIComponent(pageId)}/messages`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        recipient: { comment_id: commentId },
-        message: { text: message },
-      }),
-    },
-  );
-
-  if (!result.ok) {
-    const error = await result.text();
-    logDiagnostic("private_reply_route_failed", {
-      diagnosticId,
-      route,
-      status: result.status,
-      error: summarizeMetaError(error),
-    });
-    return {
-      ok: false,
-      error: labelMetaError(route, error),
-      attempts: [`${route}: ${result.status}`],
-    };
-  }
-
-  logDiagnostic("private_reply_route_sent", {
-    diagnosticId,
-    route,
-    status: result.status,
-  });
-  return { ok: true, status: "sent" as const, attempts: [`${route}: sent`] };
-}
-
 async function sendInstagramMessage(
   data: DataFile,
   senderId: string,
@@ -974,49 +781,12 @@ async function sendInstagramMessage(
     diagnosticId,
     senderId: safeId(senderId),
     hasAccessToken: Boolean(accessToken),
-    hasPageAccess: Boolean(getPageAccessToken(data)),
-    pageId: safeId(getPageId(data)),
     messageLength: message.length,
   });
 
   if (process.env.INSTAGRAM_DRY_RUN === "true") {
     logDiagnostic("message_reply_dry_run", { diagnosticId });
     return { ok: true, status: "dry_run" as const };
-  }
-
-  const pageId = getPageId(data);
-  const pageAccessToken = getPageAccessToken(data);
-  if (pageId && pageAccessToken) {
-    const body = new URLSearchParams({
-      recipient: JSON.stringify({ id: senderId }),
-      message: JSON.stringify({ text: message }),
-      access_token: pageAccessToken,
-    });
-    const result = await fetch(
-      `https://graph.facebook.com/${getGraphVersion()}/${encodeURIComponent(pageId)}/messages`,
-      {
-        method: "POST",
-        body,
-      },
-    );
-
-    if (!result.ok) {
-      const error = await result.text();
-      logDiagnostic("message_reply_failed", {
-        diagnosticId,
-        route: "Facebook Page messages",
-        status: result.status,
-        error: summarizeMetaError(error),
-      });
-      return { ok: false, error };
-    }
-
-    logDiagnostic("message_reply_sent", {
-      diagnosticId,
-      route: "Facebook Page messages",
-      status: result.status,
-    });
-    return { ok: true, status: "sent" as const };
   }
 
   if (!accessToken) {
@@ -1076,7 +846,6 @@ async function processInstagramEvent(
     activeRules: data.rules.filter((rule) => rule.active).length,
     hasInstagramAccess: Boolean(getInstagramAccessToken(data)),
     instagramUserId: safeId(getInstagramUserId(data)),
-    hasPageAccess: Boolean(getPageAccessToken(data)),
   });
 
   if (
@@ -1426,128 +1195,6 @@ async function postInstagramWebhookSubscription(
   return { ok: true, success: payload.success };
 }
 
-async function exchangeFacebookCodeForToken(code: string, redirectUri: string) {
-  const url = new URL(`https://graph.facebook.com/${getGraphVersion()}/oauth/access_token`);
-  url.searchParams.set("client_id", requiredEnv("FACEBOOK_APP_ID"));
-  url.searchParams.set("client_secret", requiredEnv("FACEBOOK_APP_SECRET"));
-  url.searchParams.set("redirect_uri", redirectUri);
-  url.searchParams.set("code", code);
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Facebook token exchange failed: ${await response.text()}`);
-  }
-
-  return (await response.json()) as {
-    access_token: string;
-    token_type?: string;
-    expires_in?: number;
-  };
-}
-
-async function exchangeForLongLivedFacebookToken(accessToken: string) {
-  const url = new URL(`https://graph.facebook.com/${getGraphVersion()}/oauth/access_token`);
-  url.searchParams.set("grant_type", "fb_exchange_token");
-  url.searchParams.set("client_id", requiredEnv("FACEBOOK_APP_ID"));
-  url.searchParams.set("client_secret", requiredEnv("FACEBOOK_APP_SECRET"));
-  url.searchParams.set("fb_exchange_token", accessToken);
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Long-lived Facebook token exchange failed: ${await response.text()}`);
-  }
-
-  const token = (await response.json()) as {
-    access_token: string;
-    token_type?: string;
-    expires_in?: number;
-  };
-  const permissions = await fetchFacebookPermissions(token.access_token);
-  return { ...token, permissions };
-}
-
-async function fetchFacebookProfile(accessToken: string) {
-  const url = new URL(`https://graph.facebook.com/${getGraphVersion()}/me`);
-  url.searchParams.set("fields", "id,name");
-  url.searchParams.set("access_token", accessToken);
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Facebook profile fetch failed: ${await response.text()}`);
-  }
-
-  const profile = (await response.json()) as { id?: string; name?: string };
-  if (!profile.id) {
-    throw new Error("Facebook profile fetch did not return an account id");
-  }
-
-  return { id: profile.id, name: profile.name };
-}
-
-async function fetchFacebookPermissions(accessToken: string) {
-  const url = new URL(`https://graph.facebook.com/${getGraphVersion()}/me/permissions`);
-  url.searchParams.set("access_token", accessToken);
-  const response = await fetch(url);
-  if (!response.ok) {
-    return [];
-  }
-
-  const payload = (await response.json()) as { data?: unknown[] };
-  return (payload.data ?? [])
-    .filter(isRecord)
-    .filter((item) => stringFrom(item.status) === "granted")
-    .map((item) => stringFrom(item.permission))
-    .filter(Boolean);
-}
-
-async function fetchConnectedInstagramPage(accessToken: string) {
-  const url = new URL(`https://graph.facebook.com/${getGraphVersion()}/me/accounts`);
-  url.searchParams.set(
-    "fields",
-    "id,name,access_token,tasks,instagram_business_account{id,username}",
-  );
-  url.searchParams.set("limit", "100");
-  url.searchParams.set("access_token", accessToken);
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Facebook Pages fetch failed: ${await response.text()}`);
-  }
-
-  const payload = (await response.json()) as { data?: unknown[] };
-  const pages = (payload.data ?? []).filter(isRecord);
-  const page = pages.find((item) => {
-    const account = item.instagram_business_account;
-    return isRecord(account) && stringFrom(account.id);
-  });
-
-  if (!page) {
-    throw new Error(
-      "No Facebook Page with a connected Instagram professional account was found",
-    );
-  }
-
-  const instagramAccount = page.instagram_business_account;
-  if (!isRecord(instagramAccount)) {
-    throw new Error("Connected Facebook Page did not include an Instagram account");
-  }
-
-  const id = stringFrom(page.id);
-  const pageAccessToken = stringFrom(page.access_token);
-  const instagramUserId = stringFrom(instagramAccount.id);
-  if (!id || !pageAccessToken || !instagramUserId) {
-    throw new Error("Connected Facebook Page is missing private-reply credentials");
-  }
-
-  return {
-    id,
-    name: stringFrom(page.name) || "Connected Facebook Page",
-    accessToken: pageAccessToken,
-    instagramUserId,
-    instagramUsername: stringFrom(instagramAccount.username),
-  };
-}
-
 async function handleInstagramMedia(request: Request) {
   const stateId = getRequestStateId(request);
   const data = await readData(stateId);
@@ -1740,10 +1387,9 @@ async function syncInstagramCommentsForData({
     stateId: safeId(stateId),
     mediaIds: mediaIds.map(safeId),
     requestedMediaId: safeId(requestedMediaId),
-    graphHost: readContext.graphHost,
-    instagramUserId: safeId(readContext.instagramUserId ?? getInstagramUserId(data)),
+    graphHost: "instagram",
+    instagramUserId: safeId(getInstagramUserId(data)),
     hasInstagramAccess: Boolean(getInstagramAccessToken(data)),
-    hasPageAccess: Boolean(getPageAccessToken(data)),
     permissions: data.integration?.permissions,
     rules: data.rules.length,
     activeRules: data.rules.filter((rule) => rule.active).length,
@@ -1848,18 +1494,12 @@ async function syncInstagramCommentsForData({
 
 type InstagramReadContext = {
   accessToken: string;
-  graphHost: "facebook" | "instagram";
-  instagramUserId?: string;
 };
 
 async function fetchInstagramMedia(
   context: InstagramReadContext,
 ): Promise<InstagramMediaItem[]> {
-  const mediaOwner =
-    context.graphHost === "facebook" && context.instagramUserId
-      ? encodeURIComponent(context.instagramUserId)
-      : "me";
-  const url = new URL(`${graphBaseUrl(context)}/${mediaOwner}/media`);
+  const url = new URL(`${graphBaseUrl()}/me/media`);
   url.searchParams.set(
     "fields",
     [
@@ -1903,7 +1543,7 @@ async function fetchInstagramComments(
   mediaId: string,
 ): Promise<InstagramCommentItem[]> {
   const url = new URL(
-    `${graphBaseUrl(context)}/${encodeURIComponent(mediaId)}/comments`,
+    `${graphBaseUrl()}/${encodeURIComponent(mediaId)}/comments`,
   );
   url.searchParams.set("fields", "id,text,timestamp,username,parent_id");
   url.searchParams.set("limit", "50");
@@ -1942,18 +1582,14 @@ function getGraphVersion() {
   return process.env.INSTAGRAM_GRAPH_VERSION ?? "v25.0";
 }
 
-function getOAuthRedirectUri(request: Request, provider: "instagram" | "facebook" = "instagram") {
-  if (provider === "facebook" && process.env.FACEBOOK_OAUTH_REDIRECT_URI) {
-    return process.env.FACEBOOK_OAUTH_REDIRECT_URI;
-  }
-
-  if (provider === "instagram" && process.env.INSTAGRAM_OAUTH_REDIRECT_URI) {
+function getOAuthRedirectUri(request: Request) {
+  if (process.env.INSTAGRAM_OAUTH_REDIRECT_URI) {
     return process.env.INSTAGRAM_OAUTH_REDIRECT_URI;
   }
 
   const proto = request.headers.get("x-forwarded-proto") ?? "http";
   const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-  return `${proto}://${host}/api/auth/${provider}/callback`;
+  return `${proto}://${host}/api/auth/instagram/callback`;
 }
 
 function redirectToApp(request: Request, message: string, cookies: string[] = []) {
@@ -1962,53 +1598,21 @@ function redirectToApp(request: Request, message: string, cookies: string[] = []
   return redirect(url.toString(), cookies);
 }
 
-function formatOAuthProviderError(
-  provider: "instagram" | "facebook",
-  error: string,
-  errorDescription: string | null,
-) {
+function formatOAuthProviderError(error: string, errorDescription: string | null) {
   const rawMessage = errorDescription ?? error;
   if (/insufficient developer role/i.test(rawMessage)) {
-    const accountType = provider === "facebook" ? "Facebook account" : "Instagram account";
-    return `${providerLabel(provider)} connection blocked by Meta: this ${accountType} is not allowed to test this app yet. Add the account in the Meta App Dashboard app roles or switch the app to Live after permissions are approved.`;
+    return "Instagram connection blocked by Meta: this Instagram account is not allowed to test this app yet. Add the account in the Meta App Dashboard app roles or switch the app to Live after permissions are approved.";
   }
 
-  return `${providerLabel(provider)} connection failed: ${rawMessage}`;
+  return `Instagram connection failed: ${rawMessage}`;
 }
 
 function getInstagramAppId() {
   return process.env.INSTAGRAM_APP_ID ?? process.env.VITE_INSTAGRAM_APP_ID;
 }
 
-function getFacebookAppId() {
-  return process.env.FACEBOOK_APP_ID;
-}
-
-function getFacebookAppSecret() {
-  return process.env.FACEBOOK_APP_SECRET;
-}
-
-function getFacebookLoginConfigId() {
-  return process.env.FACEBOOK_LOGIN_CONFIG_ID;
-}
-
-function addFacebookLoginConfig(authUrl: string, provider: "instagram" | "facebook") {
-  const configId = getFacebookLoginConfigId();
-  if (provider !== "facebook" || !configId) {
-    return authUrl;
-  }
-
-  const url = new URL(authUrl);
-  url.searchParams.set("config_id", configId);
-  return url.toString();
-}
-
 function getAccessToken(data: DataFile) {
-  return (
-    getInstagramAccessToken(data) ??
-    data.integration?.pageAccessToken ??
-    process.env.FACEBOOK_PAGE_ACCESS_TOKEN
-  );
+  return getInstagramAccessToken(data);
 }
 
 function getInstagramAccessToken(data: DataFile) {
@@ -2020,52 +1624,34 @@ function getInstagramUserId(data: DataFile) {
 }
 
 function getInstagramReadContext(data: DataFile): InstagramReadContext | null {
-  const pageAccessToken = getPageAccessToken(data);
-  const instagramUserId = data.integration?.userId ?? process.env.INSTAGRAM_USER_ID;
-  if (pageAccessToken && instagramUserId) {
-    return {
-      accessToken: pageAccessToken,
-      graphHost: "facebook",
-      instagramUserId,
-    };
-  }
-
   const accessToken = data.integration?.accessToken ?? process.env.INSTAGRAM_ACCESS_TOKEN;
   if (accessToken) {
     return {
       accessToken,
-      graphHost: "instagram",
     };
   }
 
   return null;
 }
 
-function graphBaseUrl(context: InstagramReadContext) {
-  const host =
-    context.graphHost === "facebook"
-      ? "https://graph.facebook.com"
-      : "https://graph.instagram.com";
-  return `${host}/${getGraphVersion()}`;
-}
-
-function getPageId(data: DataFile) {
-  return data.integration?.pageId ?? process.env.FACEBOOK_PAGE_ID;
-}
-
-function getPageAccessToken(data: DataFile) {
-  return data.integration?.pageAccessToken ?? process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
+function graphBaseUrl() {
+  return `https://graph.instagram.com/${getGraphVersion()}`;
 }
 
 function canSendPrivateReplies(data: DataFile) {
-  return Boolean(getInstagramAccessToken(data) && getInstagramUserId(data));
+  return privateReplyReadiness(data).ready;
 }
 
 function isMetaConnected(data: DataFile) {
-  return Boolean(getAccessToken(data) || canSendPrivateReplies(data));
+  return Boolean(getInstagramAccessToken(data) && getInstagramUserId(data));
 }
 
 function privateReplyReadiness(data: DataFile) {
+  const permissions = data.integration?.permissions ?? [];
+  const hasKnownPermissions = permissions.length > 0;
+  const missingPermissions = hasKnownPermissions
+    ? requiredInstagramPermissions.filter((permission) => !permissions.includes(permission))
+    : [];
   const checks = [
     {
       key: "instagramAppId",
@@ -2087,17 +1673,47 @@ function privateReplyReadiness(data: DataFile) {
       label: "Instagram professional account",
       ready: Boolean(getInstagramUserId(data)),
     },
+    {
+      key: "instagramPermissions",
+      label: hasKnownPermissions
+        ? "Instagram comment and message permissions"
+        : "Instagram permissions recorded",
+      ready: hasKnownPermissions && missingPermissions.length === 0,
+      detail: hasKnownPermissions
+        ? missingPermissions.length > 0
+          ? `Missing: ${missingPermissions.join(", ")}`
+          : "Required permissions are present"
+        : "Reconnect Instagram so MuseInbox can confirm the granted permissions",
+    },
+    {
+      key: "dryRun",
+      label: "Live DM sending",
+      ready: process.env.INSTAGRAM_DRY_RUN !== "true",
+      detail:
+        process.env.INSTAGRAM_DRY_RUN === "true"
+          ? "Dry run is on, so the app will log matches without sending DMs"
+          : "Dry run is off",
+    },
+    {
+      key: "webhookVerifyToken",
+      label: "Webhook verify token",
+      ready: Boolean(process.env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN),
+      detail: "Needed for automatic comment webhooks from Meta",
+    },
   ];
 
   return {
     ready: checks.every((check) => check.ready),
-    canSendPrivateReplies: canSendPrivateReplies(data),
+    canSendPrivateReplies: checks.every((check) => check.ready),
     checks,
     missing: checks
       .filter((check) => !check.ready)
       .map((check) => check.label),
-    pageName: data.integration?.pageName,
     loginProvider: data.integration?.loginProvider,
+    requiredPermissions: requiredInstagramPermissions,
+    missingPermissions,
+    webhookSubscribed: Boolean(data.integration?.webhookSubscribedAt),
+    webhookSubscriptionError: data.integration?.webhookSubscriptionError,
   };
 }
 
@@ -2214,10 +1830,6 @@ function summarizeRulePauseError(error?: string) {
   return (summary.message ?? "Instagram rejected the send.").slice(0, 180);
 }
 
-function providerLabel(provider: "instagram" | "facebook") {
-  return provider === "facebook" ? "Facebook Page" : "Instagram";
-}
-
 function getRequestStateId(request: Request) {
   const session = readSignedCookie<{ stateId?: string }>(request, sessionCookieName);
   return session?.stateId || defaultStateId;
@@ -2300,11 +1912,7 @@ async function discoverInstagramWebhookAccountAliases(
 }
 
 async function fetchInstagramWebhookAccountIds(context: InstagramReadContext) {
-  const mediaOwner =
-    context.graphHost === "facebook" && context.instagramUserId
-      ? encodeURIComponent(context.instagramUserId)
-      : "me";
-  const url = new URL(`${graphBaseUrl(context)}/${mediaOwner}/media`);
+  const url = new URL(`${graphBaseUrl()}/me/media`);
   url.searchParams.set("fields", "id,owner");
   url.searchParams.set("limit", "5");
   url.searchParams.set("access_token", context.accessToken);
@@ -2562,11 +2170,8 @@ function requiredEnv(key: string) {
 }
 
 function verifySignature(request: Request, rawBody: Buffer) {
-  const appSecrets = [
-    process.env.INSTAGRAM_APP_SECRET,
-    process.env.FACEBOOK_APP_SECRET,
-  ].filter((secret): secret is string => Boolean(secret));
-  if (appSecrets.length === 0) {
+  const appSecret = process.env.INSTAGRAM_APP_SECRET;
+  if (!appSecret) {
     return true;
   }
 
@@ -2576,12 +2181,10 @@ function verifySignature(request: Request, rawBody: Buffer) {
   }
 
   const actual = Buffer.from(signature);
-  return appSecrets.some((appSecret) => {
-    const expected = Buffer.from(
-      `sha256=${createHmac("sha256", appSecret).update(rawBody).digest("hex")}`,
-    );
-    return expected.length === actual.length && timingSafeEqual(expected, actual);
-  });
+  const expected = Buffer.from(
+    `sha256=${createHmac("sha256", appSecret).update(rawBody).digest("hex")}`,
+  );
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
 function validateDraft(draft: DraftRule) {
@@ -2704,8 +2307,39 @@ function normalizeData(data: Partial<DataFile>): DataFile {
     processedCommentIds: Array.isArray(data.processedCommentIds)
       ? data.processedCommentIds.filter((id): id is string => typeof id === "string")
       : [],
-    integration: isRecord(data.integration) ? data.integration : {},
+    integration: normalizeIntegration(data.integration),
     fairUse: normalizeFairUse(data.fairUse),
+  };
+}
+
+function normalizeIntegration(value: unknown): InstagramIntegration {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return {
+    accessToken: stringFrom(value.accessToken) || undefined,
+    encryptedAccessToken: stringFrom(value.encryptedAccessToken) || undefined,
+    tokenType: stringFrom(value.tokenType) || undefined,
+    loginProvider: stringFrom(value.loginProvider) === "instagram" ? "instagram" : undefined,
+    userId: stringFrom(value.userId) || undefined,
+    webhookAccountIds: Array.isArray(value.webhookAccountIds)
+      ? value.webhookAccountIds.filter((id): id is string => typeof id === "string")
+      : undefined,
+    permissions: Array.isArray(value.permissions)
+      ? value.permissions.filter((permission): permission is string => typeof permission === "string")
+      : undefined,
+    webhookSubscribedAt: stringFrom(value.webhookSubscribedAt) || undefined,
+    webhookSubscriptionCheckedAt:
+      stringFrom(value.webhookSubscriptionCheckedAt) || undefined,
+    webhookSubscriptionError: stringFrom(value.webhookSubscriptionError) || undefined,
+    connectedAt: stringFrom(value.connectedAt) || undefined,
+    expiresAt: stringFrom(value.expiresAt) || undefined,
+    oauthState: stringFrom(value.oauthState) || undefined,
+    oauthStartedAt: stringFrom(value.oauthStartedAt) || undefined,
+    oauthRedirectUri: stringFrom(value.oauthRedirectUri) || undefined,
+    oauthAuthorizeUrl: stringFrom(value.oauthAuthorizeUrl) || undefined,
+    lastOAuthError: stringFrom(value.lastOAuthError) || undefined,
   };
 }
 
@@ -2733,11 +2367,11 @@ function normalizeFairUse(value: unknown): FairUseState {
 
 function encryptData(data: DataFile): DataFile {
   const integration = data.integration;
-  if (!integration?.accessToken && !integration?.pageAccessToken) {
+  if (!integration?.accessToken) {
     return data;
   }
 
-  const { accessToken, pageAccessToken, ...restIntegration } = integration;
+  const { accessToken, ...restIntegration } = integration;
   return {
     ...data,
     integration: {
@@ -2745,9 +2379,6 @@ function encryptData(data: DataFile): DataFile {
       encryptedAccessToken: accessToken
         ? encryptSecret(accessToken)
         : integration.encryptedAccessToken,
-      encryptedPageAccessToken: pageAccessToken
-        ? encryptSecret(pageAccessToken)
-        : integration.encryptedPageAccessToken,
     },
   };
 }
@@ -2759,8 +2390,7 @@ function decryptData(data: Record<string, unknown>): Partial<DataFile> {
   }
 
   const encryptedAccessToken = stringFrom(integration.encryptedAccessToken);
-  const encryptedPageAccessToken = stringFrom(integration.encryptedPageAccessToken);
-  if (!encryptedAccessToken && !encryptedPageAccessToken) {
+  if (!encryptedAccessToken) {
     return data as Partial<DataFile>;
   }
 
@@ -2770,9 +2400,6 @@ function decryptData(data: Record<string, unknown>): Partial<DataFile> {
       ...integration,
       accessToken: encryptedAccessToken
         ? decryptSecret(encryptedAccessToken)
-        : undefined,
-      pageAccessToken: encryptedPageAccessToken
-        ? decryptSecret(encryptedPageAccessToken)
         : undefined,
     },
   } as Partial<DataFile>;

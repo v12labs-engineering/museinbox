@@ -75,17 +75,14 @@ type InstagramStatus = {
   oauthCallbackPath: string;
   graphVersion: string;
   hasAccessToken: boolean;
-  hasPageAccess: boolean;
   connected: boolean;
   tokenSource: "oauth" | "env";
   connectedAt?: string;
   expiresAt?: string;
   instagramUserId?: string;
-  facebookUserId?: string;
-  loginProvider?: "instagram" | "facebook";
-  pageId?: string;
-  pageName?: string;
+  loginProvider?: "instagram";
   canSendPrivateReplies: boolean;
+  privateReplyReadiness?: PrivateReplyReadiness;
   permissions: string[];
   webhookSubscribedAt?: string;
   webhookSubscriptionCheckedAt?: string;
@@ -95,6 +92,22 @@ type InstagramStatus = {
   hasAppSecret: boolean;
   dryRun: boolean;
   fairUse?: FairUseSummary;
+};
+
+type PrivateReplyReadiness = {
+  ready: boolean;
+  canSendPrivateReplies: boolean;
+  checks: Array<{
+    key: string;
+    label: string;
+    ready: boolean;
+    detail?: string;
+  }>;
+  missing: string[];
+  requiredPermissions?: string[];
+  missingPermissions?: string[];
+  webhookSubscribed?: boolean;
+  webhookSubscriptionError?: string;
 };
 
 type FairUseSummary = {
@@ -474,7 +487,7 @@ function App({ currentView }: AppProps) {
       setSelectedMediaComments(result.comments);
       setNotice(
         result.comments.length === 0
-          ? "Instagram returned no comments for this post/reel."
+          ? "Instagram returned 0 comments for this post/reel, so no DM was attempted. Confirm the test comment is on this exact post and, while the Meta app is in development mode, use an account added to the app as a tester."
           : sendCandidates > 0
             ? `Previewed ${result.comments.length} comments. ${sendCandidates} ready to send; click Send matched DMs to send now.`
             : `Previewed ${result.comments.length} comments. No new matching comments are ready to send.`,
@@ -514,7 +527,9 @@ function App({ currentView }: AppProps) {
           setNotice(
             result.acted > 0
               ? `Checked ${result.checked} comments and sent ${result.acted}.`
-              : `Checked ${result.checked} comments. No new matching comments found.`,
+              : result.checked === 0
+                ? "Instagram returned 0 comments for this post/reel, so no DM was attempted. Confirm the test comment is on this exact post and, while the Meta app is in development mode, use an account added to the app as a tester."
+                : `Checked ${result.checked} comments. No new matching comments found.`,
           );
         }
         setError("");
@@ -1672,6 +1687,8 @@ function SettingsView({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const permissions = status?.permissions?.length ? status.permissions : [];
   const fairUse = status?.fairUse;
+  const readiness = status?.privateReplyReadiness;
+  const readinessChecks = readiness?.checks ?? [];
 
   return (
     <div className="grid min-w-0 max-w-5xl gap-4">
@@ -1717,7 +1734,7 @@ function SettingsView({
           <div
             className={cn(
               "min-w-0 overflow-hidden rounded-xl border p-4",
-              status?.canSendPrivateReplies
+              readiness?.ready
                 ? "muse-alert-success"
                 : "muse-alert-warning",
             )}
@@ -1728,35 +1745,64 @@ function SettingsView({
                   Comment-to-DM readiness
                 </p>
                 <h3 className="mt-2 text-lg font-black">
-                  {status?.canSendPrivateReplies
+                  {readiness?.ready
                     ? "Private replies are ready"
                     : "Reconnect Instagram"}
                 </h3>
                 <p className="mt-1 text-sm font-medium">
-                  {status?.canSendPrivateReplies
-                    ? "Sending through the connected Instagram professional account."
-                    : "MuseInbox needs a valid Instagram connection with comment permissions before it can send private replies from comments."}
+                  {readiness?.ready
+                    ? "A matching comment can be sent as a DM from the connected Instagram professional account."
+                    : readiness?.missing?.length
+                      ? `Needs: ${readiness.missing.join(", ")}.`
+                      : "MuseInbox needs a valid Instagram connection with comment permissions before it can send private replies from comments."}
                 </p>
               </div>
               <Badge
                 className={
-                  status?.canSendPrivateReplies
+                  readiness?.ready
                     ? "muse-badge-success"
                     : "muse-badge-warning"
                 }
               >
-                {status?.canSendPrivateReplies ? "DM ready" : "Needs Instagram"}
+                {readiness?.ready ? "DM ready" : "Needs setup"}
               </Badge>
             </div>
+            {readinessChecks.length > 0 ? (
+              <div className="mt-4 grid gap-2">
+                {readinessChecks.map((check) => (
+                  <div
+                    className="flex min-w-0 flex-wrap items-start justify-between gap-2 rounded-lg border border-border/70 bg-background/70 p-3"
+                    key={check.key}
+                  >
+                    <div className="min-w-0">
+                      <p className="font-black">{check.label}</p>
+                      {check.detail ? (
+                        <p className="mt-1 break-words text-xs font-medium text-muted-foreground">
+                          {check.detail}
+                        </p>
+                      ) : null}
+                    </div>
+                    <Badge
+                      className={
+                        check.ready ? "muse-badge-success" : "muse-badge-warning"
+                      }
+                    >
+                      {check.ready ? "OK" : "Needs fix"}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
 
-          {!status?.canSendPrivateReplies ? (
+          {!readiness?.ready ? (
             <Alert className="muse-alert-warning">
               <AlertTriangle className="size-4" />
               <AlertTitle>Instagram connection needs attention</AlertTitle>
               <AlertDescription>
-                Reconnect Instagram with <code>instagram_business_basic</code>{" "}
-                and <code>instagram_business_manage_comments</code> permissions.
+                Reconnect Instagram with <code>instagram_business_basic</code>,{" "}
+                <code>instagram_business_manage_comments</code>, and{" "}
+                <code>instagram_business_manage_messages</code> permissions.
               </AlertDescription>
             </Alert>
           ) : null}
