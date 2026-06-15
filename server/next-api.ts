@@ -498,6 +498,25 @@ async function handleOAuthCallback(
     throw exchangeError;
   }
 
+  const missingPermissions = missingRequiredInstagramPermissions(
+    shortToken.permissions ?? [],
+  );
+  if (missingPermissions.length > 0) {
+    const userId = String(shortToken.user_id ?? "");
+    const stateId = userId ? accountStateId(userId) : getRequestStateId(request);
+    const data = await readData(stateId);
+    data.integration = {
+      ...data.integration,
+      lastOAuthError: formatMissingPermissionError(missingPermissions),
+    };
+    await writeData(data, stateId);
+    return redirectToApp(
+      request,
+      formatMissingPermissionError(missingPermissions),
+      [clearCookie(sessionCookieName), clearCookie(oauthCookieName)],
+    );
+  }
+
   const longToken = await exchangeForLongLivedToken(shortToken.access_token);
   const userId = String(shortToken.user_id ?? "");
   const stateId = accountStateId(userId);
@@ -1607,6 +1626,16 @@ function formatOAuthProviderError(error: string, errorDescription: string | null
   }
 
   return `Instagram connection failed: ${rawMessage}`;
+}
+
+function missingRequiredInstagramPermissions(permissions: string[]) {
+  return requiredInstagramPermissions.filter(
+    (permission) => !permissions.includes(permission),
+  );
+}
+
+function formatMissingPermissionError(missingPermissions: string[]) {
+  return `Instagram connection incomplete. Approve all requested permissions before continuing. Missing: ${missingPermissions.join(", ")}.`;
 }
 
 function getInstagramAppId() {
