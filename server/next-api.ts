@@ -136,8 +136,6 @@ const defaultScopes = [
   "instagram_business_basic",
   "instagram_business_manage_messages",
   "instagram_business_manage_comments",
-  "instagram_business_content_publish",
-  "instagram_business_manage_insights",
 ].join(",");
 const requiredInstagramPermissions = defaultScopes.split(",");
 
@@ -429,6 +427,7 @@ async function startOAuth(request: Request) {
   const authUrl = [
     authBase,
     `force_reauth=true`,
+    `auth_type=rerequest`,
     `client_id=${encodeURIComponent(clientId)}`,
     `redirect_uri=${encodeURIComponent(redirectUri)}`,
     "response_type=code",
