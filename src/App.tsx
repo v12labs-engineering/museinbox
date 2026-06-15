@@ -484,10 +484,13 @@ function App({ currentView }: AppProps) {
         `/api/instagram/comments?${params.toString()}`,
       );
       const sendCandidates = result.comments.filter((comment) => comment.wouldSend).length;
+      const reportedComments = selectedMedia.commentsCount ?? 0;
       setSelectedMediaComments(result.comments);
       setNotice(
         result.comments.length === 0
-          ? "Instagram returned 0 comments for this post/reel, so no DM was attempted. Confirm the test comment is on this exact post and, while the Meta app is in development mode, use an account added to the app as a tester."
+          ? reportedComments > 0
+            ? `Instagram says this post/reel has ${reportedComments} comments, but it did not return readable comment records. Reconnect Instagram and approve all requested permissions, then try Read comments again.`
+            : "Instagram returned 0 comments for this post/reel, so no DM was attempted. Confirm the test comment is on this exact post and, while the Meta app is in development mode, use an account added to the app as a tester."
           : sendCandidates > 0
             ? `Previewed ${result.comments.length} comments. ${sendCandidates} ready to send; click Send matched DMs to send now.`
             : `Previewed ${result.comments.length} comments. No new matching comments are ready to send.`,
@@ -528,7 +531,9 @@ function App({ currentView }: AppProps) {
             result.acted > 0
               ? `Checked ${result.checked} comments and sent ${result.acted}.`
               : result.checked === 0
-                ? "Instagram returned 0 comments for this post/reel, so no DM was attempted. Confirm the test comment is on this exact post and, while the Meta app is in development mode, use an account added to the app as a tester."
+                ? selectedMedia?.commentsCount
+                  ? `Instagram says this post/reel has ${selectedMedia.commentsCount} comments, but it did not return readable comment records. Reconnect Instagram and approve all requested permissions, then try again.`
+                  : "Instagram returned 0 comments for this post/reel, so no DM was attempted. Confirm the test comment is on this exact post and, while the Meta app is in development mode, use an account added to the app as a tester."
                 : `Checked ${result.checked} comments. No new matching comments found.`,
           );
         }
