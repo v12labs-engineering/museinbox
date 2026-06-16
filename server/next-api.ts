@@ -749,11 +749,11 @@ async function postInstagramPrivateReply(
     route,
     targetId: safeId(targetId),
     commentId: safeId(commentId),
-    host: "graph.instagram.com",
+    host: "graph.facebook.com",
   });
 
   const result = await fetch(
-    `https://graph.instagram.com/${getGraphVersion()}/${encodeURIComponent(targetId)}/messages`,
+    `https://graph.facebook.com/${getGraphVersion()}/${encodeURIComponent(targetId)}/messages`,
     {
       method: "POST",
       headers: {
@@ -820,7 +820,7 @@ async function sendInstagramMessage(
     access_token: accessToken,
   });
   const result = await fetch(
-    `https://graph.instagram.com/${getGraphVersion()}/me/messages`,
+    `https://graph.facebook.com/${getGraphVersion()}/me/messages`,
     {
       method: "POST",
       body,
@@ -1121,7 +1121,7 @@ async function ensureInstagramWebhookSubscription(
     return false;
   }
 
-  const fields = "comments,messages";
+  const fields = "comments,mentions";
   logDiagnostic("webhook_account_subscription_start", {
     diagnosticId,
     instagramUserId: safeId(instagramUserId),
@@ -1134,8 +1134,8 @@ async function ensureInstagramWebhookSubscription(
   };
 
   const attempts = [
-    { label: "Instagram me/subscribed_apps", targetId: "me" },
-    { label: "Instagram ID subscribed_apps", targetId: instagramUserId },
+    { label: "Graph me/subscribed_apps", targetId: "me" },
+    { label: "Graph IG user subscribed_apps", targetId: instagramUserId },
   ];
   const errors: string[] = [];
   for (const attempt of attempts) {
@@ -1174,7 +1174,7 @@ async function postInstagramWebhookSubscription(
   diagnosticId: string,
 ): Promise<{ ok: true; success?: boolean } | { ok: false; error: string }> {
   const url = new URL(
-    `https://graph.instagram.com/${getGraphVersion()}/${encodeURIComponent(targetId)}/subscribed_apps`,
+    `https://graph.facebook.com/${getGraphVersion()}/${encodeURIComponent(targetId)}/subscribed_apps`,
   );
   url.searchParams.set("subscribed_fields", fields);
   url.searchParams.set("access_token", accessToken);
@@ -1407,7 +1407,7 @@ async function syncInstagramCommentsForData({
     stateId: safeId(stateId),
     mediaIds: mediaIds.map(safeId),
     requestedMediaId: safeId(requestedMediaId),
-    graphHost: "instagram",
+    graphHost: "facebook",
     instagramUserId: safeId(getInstagramUserId(data)),
     hasInstagramAccess: Boolean(getInstagramAccessToken(data)),
     permissions: data.integration?.permissions,
@@ -1519,7 +1519,7 @@ type InstagramReadContext = {
 async function fetchInstagramMedia(
   context: InstagramReadContext,
 ): Promise<InstagramMediaItem[]> {
-  const url = new URL(`${graphBaseUrl()}/me/media`);
+  const url = new URL(`${graphApiBaseUrl()}/me/media`);
   url.searchParams.set(
     "fields",
     [
@@ -1563,7 +1563,7 @@ async function fetchInstagramComments(
   mediaId: string,
 ): Promise<InstagramCommentItem[]> {
   const url = new URL(
-    `${graphBaseUrl()}/${encodeURIComponent(mediaId)}/comments`,
+    `${graphApiBaseUrl()}/${encodeURIComponent(mediaId)}/comments`,
   );
   url.searchParams.set("fields", "id,text,timestamp,username,parent_id");
   url.searchParams.set("limit", "50");
@@ -1664,8 +1664,8 @@ function getInstagramReadContext(data: DataFile): InstagramReadContext | null {
   return null;
 }
 
-function graphBaseUrl() {
-  return `https://graph.instagram.com/${getGraphVersion()}`;
+function graphApiBaseUrl() {
+  return `https://graph.facebook.com/${getGraphVersion()}`;
 }
 
 function canSendPrivateReplies(data: DataFile) {
@@ -1942,7 +1942,7 @@ async function discoverInstagramWebhookAccountAliases(
 }
 
 async function fetchInstagramWebhookAccountIds(context: InstagramReadContext) {
-  const url = new URL(`${graphBaseUrl()}/me/media`);
+  const url = new URL(`${graphApiBaseUrl()}/me/media`);
   url.searchParams.set("fields", "id,owner");
   url.searchParams.set("limit", "5");
   url.searchParams.set("access_token", context.accessToken);
