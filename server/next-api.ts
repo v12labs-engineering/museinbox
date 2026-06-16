@@ -36,6 +36,7 @@ type InstagramIntegration = {
   userId?: string;
   webhookAccountIds?: string[];
   permissions?: string[];
+  webhookLastReceivedAt?: string;
   webhookSubscribedAt?: string;
   webhookSubscriptionCheckedAt?: string;
   webhookSubscriptionError?: string;
@@ -272,6 +273,7 @@ export async function handleApiRequest(request: Request) {
         instagramUserId: data.integration?.userId,
         webhookAccountIds: data.integration?.webhookAccountIds ?? [],
         loginProvider: data.integration?.loginProvider,
+        webhookLastReceivedAt: data.integration?.webhookLastReceivedAt,
         canSendPrivateReplies: canSendPrivateReplies(data),
         privateReplyReadiness: privateReplyReadiness(data),
         permissions: data.integration?.permissions ?? [],
@@ -627,6 +629,13 @@ async function handleInstagramWebhook(request: Request) {
       ? await resolveWebhookStateId(event.accountId, diagnosticId)
       : defaultStateId;
     const data = await readData(stateId);
+    data.integration = {
+      ...data.integration,
+      webhookLastReceivedAt: new Date().toISOString(),
+      webhookSubscribedAt:
+        data.integration?.webhookSubscribedAt ?? new Date().toISOString(),
+      webhookSubscriptionError: undefined,
+    };
     await processInstagramEvent(data, event, diagnosticId);
     await writeData(data, stateId);
   }
@@ -707,17 +716,6 @@ async function sendInstagramPrivateReply(
   accessToken: string,
   diagnosticId: string,
 ): Promise<SendReplyResult> {
-  const meResult = await postInstagramPrivateReply(
-    "me",
-    commentId,
-    message,
-    accessToken,
-    diagnosticId,
-  );
-  if (meResult.ok || !shouldRetryPrivateReplyWithMe(meResult.error)) {
-    return meResult;
-  }
-
   const directResult = await postInstagramPrivateReply(
     instagramUserId,
     commentId,
@@ -725,14 +723,25 @@ async function sendInstagramPrivateReply(
     accessToken,
     diagnosticId,
   );
-  if (directResult.ok) {
+  if (directResult.ok || !shouldRetryPrivateReplyWithMe(directResult.error)) {
     return directResult;
+  }
+
+  const meResult = await postInstagramPrivateReply(
+    "me",
+    commentId,
+    message,
+    accessToken,
+    diagnosticId,
+  );
+  if (meResult.ok) {
+    return meResult;
   }
 
   return {
     ok: false,
-    error: joinSendErrors(meResult.error, directResult.error),
-    attempts: [...(meResult.attempts ?? []), ...(directResult.attempts ?? [])],
+    error: joinSendErrors(directResult.error, meResult.error),
+    attempts: [...(directResult.attempts ?? []), ...(meResult.attempts ?? [])],
   };
 }
 
@@ -1106,113 +1115,18 @@ async function ensureInstagramWebhookSubscription(
     return false;
   }
 
-  if (data.integration?.webhookSubscribedAt) {
+  if (data.integration?.webhookLastReceivedAt) {
     return false;
   }
-
-  const lastCheckedAt = Date.parse(
-    data.integration?.webhookSubscriptionCheckedAt ?? "",
-  );
-  if (
-    !data.integration?.webhookSubscriptionError &&
-    Number.isFinite(lastCheckedAt) &&
-    Date.now() - lastCheckedAt < 5 * 60 * 1000
-  ) {
-    return false;
-  }
-
-  const fields = "comments,mentions";
-  logDiagnostic("webhook_account_subscription_start", {
-    diagnosticId,
-    instagramUserId: safeId(instagramUserId),
-    fields,
-  });
 
   data.integration = {
     ...data.integration,
     webhookSubscriptionCheckedAt: new Date().toISOString(),
+    webhookSubscriptionError:
+      "Instagram webhook subscriptions are configured in the Meta App Dashboard. No webhook events have been received yet, so the app cannot confirm delivery automatically.",
   };
 
-  const attempts = [
-    { label: "Graph me/subscribed_apps", targetId: "me" },
-    { label: "Graph IG user subscribed_apps", targetId: instagramUserId },
-  ];
-  const errors: string[] = [];
-  for (const attempt of attempts) {
-    const result = await postInstagramWebhookSubscription(
-      attempt.targetId,
-      attempt.label,
-      fields,
-      accessToken,
-      diagnosticId,
-    );
-    if (result.ok) {
-      data.integration = {
-        ...data.integration,
-        webhookSubscribedAt: new Date().toISOString(),
-        webhookSubscriptionError:
-          result.success === false ? "Meta did not confirm subscription" : undefined,
-      };
-      return true;
-    }
-
-    errors.push(result.error);
-  }
-
-  data.integration = {
-    ...data.integration,
-    webhookSubscriptionError: joinSendErrors(...errors),
-  };
   return true;
-}
-
-async function postInstagramWebhookSubscription(
-  targetId: string,
-  label: string,
-  fields: string,
-  accessToken: string,
-  diagnosticId: string,
-): Promise<{ ok: true; success?: boolean } | { ok: false; error: string }> {
-  const url = new URL(
-    `https://graph.facebook.com/${getGraphVersion()}/${encodeURIComponent(targetId)}/subscribed_apps`,
-  );
-  url.searchParams.set("subscribed_fields", fields);
-  url.searchParams.set("access_token", accessToken);
-
-  logDiagnostic("webhook_account_subscription_attempt", {
-    diagnosticId,
-    route: label,
-    targetId: safeId(targetId),
-    fields,
-  });
-
-  const response = await fetch(url, { method: "POST" });
-  if (!response.ok) {
-    const error = await response.text();
-    logDiagnostic("webhook_account_subscription_failed", {
-      diagnosticId,
-      route: label,
-      targetId: safeId(targetId),
-      status: response.status,
-      error: summarizeMetaError(error),
-    });
-    return {
-      ok: false,
-      error: labelMetaError(label, error),
-    };
-  }
-
-  const payload = (await response.json().catch(() => ({}))) as {
-    success?: boolean;
-  };
-  logDiagnostic("webhook_account_subscription_enabled", {
-    diagnosticId,
-    route: label,
-    targetId: safeId(targetId),
-    fields,
-    success: payload.success ?? true,
-  });
-  return { ok: true, success: payload.success };
 }
 
 async function handleInstagramMedia(request: Request) {
@@ -2359,6 +2273,7 @@ function normalizeIntegration(value: unknown): InstagramIntegration {
     permissions: Array.isArray(value.permissions)
       ? value.permissions.filter((permission): permission is string => typeof permission === "string")
       : undefined,
+    webhookLastReceivedAt: stringFrom(value.webhookLastReceivedAt) || undefined,
     webhookSubscribedAt: stringFrom(value.webhookSubscribedAt) || undefined,
     webhookSubscriptionCheckedAt:
       stringFrom(value.webhookSubscriptionCheckedAt) || undefined,
