@@ -1807,7 +1807,9 @@ function SettingsView({
               <AlertDescription>
                 Reconnect Instagram with <code>instagram_business_basic</code>,{" "}
                 <code>instagram_business_manage_comments</code>, and{" "}
-                <code>instagram_business_manage_messages</code> permissions.
+                <code>instagram_business_manage_messages</code>,{" "}
+                <code>pages_read_engagement</code>, and{" "}
+                <code>pages_show_list</code> permissions.
               </AlertDescription>
             </Alert>
           ) : null}

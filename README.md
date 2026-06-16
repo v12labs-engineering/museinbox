@@ -24,6 +24,9 @@ to sign in must be added to the app's roles in the Meta App Dashboard and must
 accept the invitation before OAuth will work. Otherwise Meta can redirect back
 with `Insufficient developer role`.
 
+To read comments reliably, the app also requests `pages_read_engagement` and
+`pages_show_list` in addition to the Instagram permissions.
+
 ## Supabase Storage
 
 Run `supabase/schema.sql` in the Supabase SQL editor, then set these environment variables:

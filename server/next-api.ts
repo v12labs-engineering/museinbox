@@ -137,6 +137,8 @@ const defaultScopes = [
   "instagram_business_basic",
   "instagram_business_manage_messages",
   "instagram_business_manage_comments",
+  "pages_read_engagement",
+  "pages_show_list",
 ].join(",");
 const requiredInstagramPermissions = defaultScopes.split(",");
 
