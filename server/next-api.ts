@@ -426,7 +426,7 @@ async function startOAuth(request: Request) {
   const redirectUri = getOAuthRedirectUri(request);
   const state = randomUUID();
 
-  const scopes = process.env.INSTAGRAM_OAUTH_SCOPES ?? defaultScopes;
+  const scopes = mergeRequestedScopes(process.env.INSTAGRAM_OAUTH_SCOPES);
   const authBase = "https://www.instagram.com/oauth/authorize";
   const authUrl = [
     authBase,
@@ -1556,6 +1556,19 @@ function missingRequiredInstagramPermissions(permissions: string[]) {
   return requiredInstagramPermissions.filter(
     (permission) => !permissions.includes(permission),
   );
+}
+
+function mergeRequestedScopes(rawScopes: string | undefined) {
+  const scopes = new Set(
+    (rawScopes ?? "")
+      .split(",")
+      .map((scope) => scope.trim())
+      .filter(Boolean),
+  );
+  for (const scope of requiredInstagramPermissions) {
+    scopes.add(scope);
+  }
+  return Array.from(scopes).join(",");
 }
 
 function formatMissingPermissionError(missingPermissions: string[]) {
