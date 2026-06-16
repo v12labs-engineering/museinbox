@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -1694,6 +1694,7 @@ function SettingsView({
   const fairUse = status?.fairUse;
   const readiness = status?.privateReplyReadiness;
   const readinessChecks = readiness?.checks ?? [];
+  const requiredPermissions = readiness?.requiredPermissions ?? [];
 
   return (
     <div className="grid min-w-0 max-w-5xl gap-4">
@@ -1805,11 +1806,15 @@ function SettingsView({
               <AlertTriangle className="size-4" />
               <AlertTitle>Instagram connection needs attention</AlertTitle>
               <AlertDescription>
-                Reconnect Instagram with <code>instagram_business_basic</code>,{" "}
-                <code>instagram_business_manage_comments</code>, and{" "}
-                <code>instagram_business_manage_messages</code>,{" "}
-                <code>pages_read_engagement</code>, and{" "}
-                <code>pages_show_list</code> permissions.
+                Reconnect Instagram with{" "}
+                {requiredPermissions.length > 0
+                  ? requiredPermissions.map((permission, index) => (
+                      <Fragment key={permission}>
+                        {index > 0 ? ", " : null}
+                        <code>{permission}</code>
+                      </Fragment>
+                    ))
+                  : "the required permissions"}.
               </AlertDescription>
             </Alert>
           ) : null}

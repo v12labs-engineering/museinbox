@@ -24,8 +24,10 @@ to sign in must be added to the app's roles in the Meta App Dashboard and must
 accept the invitation before OAuth will work. Otherwise Meta can redirect back
 with `Insufficient developer role`.
 
-To read comments reliably, the app also requests `pages_read_engagement` and
-`pages_show_list` in addition to the Instagram permissions.
+The built-in Instagram Login flow should request only Instagram permissions.
+Do not add `pages_read_engagement` or `pages_show_list` to
+`INSTAGRAM_OAUTH_SCOPES`; those belong to the separate Facebook Login for
+Business flow, not the Instagram OAuth URL used by this app.
 
 ## Supabase Storage
 

@@ -10,6 +10,7 @@ import {
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import bizSdk from "facebook-nodejs-business-sdk";
 import {
   cleanDraftRule,
   composeDm,
@@ -19,6 +20,8 @@ import {
   type DraftRule,
   type Rule,
 } from "../src/shared/automation";
+
+const { FacebookAdsApi } = bizSdk;
 
 type DataFile = {
   rules: Rule[];
@@ -137,8 +140,6 @@ const defaultScopes = [
   "instagram_business_basic",
   "instagram_business_manage_messages",
   "instagram_business_manage_comments",
-  "pages_read_engagement",
-  "pages_show_list",
 ].join(",");
 const requiredInstagramPermissions = defaultScopes.split(",");
 
@@ -426,7 +427,7 @@ async function startOAuth(request: Request) {
   const redirectUri = getOAuthRedirectUri(request);
   const state = randomUUID();
 
-  const scopes = mergeRequestedScopes(process.env.INSTAGRAM_OAUTH_SCOPES);
+  const scopes = resolveInstagramLoginScopes(process.env.INSTAGRAM_OAUTH_SCOPES);
   const authBase = "https://www.instagram.com/oauth/authorize";
   const authUrl = [
     authBase,
@@ -1441,13 +1442,31 @@ type InstagramReadContext = {
   accessToken: string;
 };
 
+function createMetaApi(accessToken: string) {
+  return new FacebookAdsApi(accessToken, "en_US", false);
+}
+
+async function callInstagramGraph<T>(
+  context: InstagramReadContext,
+  pathSegments: string[],
+  params: Record<string, string>,
+): Promise<T> {
+  const api = createMetaApi(context.accessToken);
+  return (await api.call(
+    "GET",
+    pathSegments,
+    params,
+    {},
+    false,
+    instagramGraphBaseUrl(),
+  )) as T;
+}
+
 async function fetchInstagramMedia(
   context: InstagramReadContext,
 ): Promise<InstagramMediaItem[]> {
-  const url = new URL(`${instagramGraphBaseUrl()}/${getGraphVersion()}/me/media`);
-  url.searchParams.set(
-    "fields",
-    [
+  const payload = await callInstagramGraph<{ data?: unknown[] }>(context, ["me", "media"], {
+    fields: [
       "id",
       "caption",
       "owner",
@@ -1459,16 +1478,8 @@ async function fetchInstagramMedia(
       "comments_count",
       "like_count",
     ].join(","),
-  );
-  url.searchParams.set("limit", "25");
-  url.searchParams.set("access_token", context.accessToken);
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Instagram media fetch failed: ${await response.text()}`);
-  }
-
-  const payload = (await response.json()) as { data?: unknown[] };
+    limit: "25",
+  });
   return (payload.data ?? []).filter(isRecord).map((item) => ({
     id: stringFrom(item.id),
     caption: stringFrom(item.caption),
@@ -1487,19 +1498,14 @@ async function fetchInstagramComments(
   context: InstagramReadContext,
   mediaId: string,
 ): Promise<InstagramCommentItem[]> {
-  const url = new URL(
-    `${instagramGraphBaseUrl()}/${getGraphVersion()}/${encodeURIComponent(mediaId)}/comments`,
+  const payload = await callInstagramGraph<{ data?: unknown[] }>(
+    context,
+    [mediaId, "comments"],
+    {
+      fields: "id,text,timestamp,username,parent_id",
+      limit: "50",
+    },
   );
-  url.searchParams.set("fields", "id,text,timestamp,username,parent_id");
-  url.searchParams.set("limit", "50");
-  url.searchParams.set("access_token", context.accessToken);
-
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Instagram comments fetch failed: ${await response.text()}`);
-  }
-
-  const payload = (await response.json()) as { data?: unknown[] };
   return (payload.data ?? []).filter(isRecord).map((item) => ({
     id: stringFrom(item.id),
     text: stringFrom(item.text),
@@ -1558,7 +1564,7 @@ function missingRequiredInstagramPermissions(permissions: string[]) {
   );
 }
 
-function mergeRequestedScopes(rawScopes: string | undefined) {
+function resolveInstagramLoginScopes(rawScopes: string | undefined) {
   const scopes = new Set(
     (rawScopes ?? "")
       .split(",")
@@ -1884,17 +1890,10 @@ async function discoverInstagramWebhookAccountAliases(
 }
 
 async function fetchInstagramWebhookAccountIds(context: InstagramReadContext) {
-  const url = new URL(`${instagramGraphBaseUrl()}/${getGraphVersion()}/me/media`);
-  url.searchParams.set("fields", "id,owner");
-  url.searchParams.set("limit", "5");
-  url.searchParams.set("access_token", context.accessToken);
-
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Instagram webhook alias discovery failed: ${await response.text()}`);
-  }
-
-  const payload = (await response.json()) as { data?: unknown[] };
+  const payload = await callInstagramGraph<{ data?: unknown[] }>(context, ["me", "media"], {
+    fields: "id,owner",
+    limit: "5",
+  });
   return (payload.data ?? [])
     .filter(isRecord)
     .map((item) => (isRecord(item.owner) ? stringFrom(item.owner.id) : ""))
