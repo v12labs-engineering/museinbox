@@ -758,11 +758,11 @@ async function postInstagramPrivateReply(
     route,
     targetId: safeId(targetId),
     commentId: safeId(commentId),
-    host: "graph.facebook.com",
+    host: instagramGraphBaseUrl(),
   });
 
   const result = await fetch(
-    `https://graph.facebook.com/${getGraphVersion()}/${encodeURIComponent(targetId)}/messages`,
+    `${instagramGraphBaseUrl()}/${getGraphVersion()}/${encodeURIComponent(targetId)}/messages`,
     {
       method: "POST",
       headers: {
@@ -829,7 +829,7 @@ async function sendInstagramMessage(
     access_token: accessToken,
   });
   const result = await fetch(
-    `https://graph.facebook.com/${getGraphVersion()}/me/messages`,
+    `${instagramGraphBaseUrl()}/${getGraphVersion()}/me/messages`,
     {
       method: "POST",
       body,
@@ -1138,17 +1138,26 @@ async function handleInstagramMedia(request: Request) {
     return json(401, { error: "Connect Instagram first" });
   }
 
-  const media = await fetchInstagramMedia(readContext);
-  if (
-    updateWebhookAccountAliases(
-      data,
-      media.map((item) => item.ownerId).filter(Boolean),
-      "media",
-    )
-  ) {
-    await writeData(data, stateId);
+  try {
+    const media = await fetchInstagramMedia(readContext);
+    if (
+      updateWebhookAccountAliases(
+        data,
+        media.map((item) => item.ownerId).filter(Boolean),
+        "media",
+      )
+    ) {
+      await writeData(data, stateId);
+    }
+    return json(200, media);
+  } catch (error) {
+    const message = messageFromUnknown(error);
+    return json(502, {
+      error: isExpiredMetaTokenError(message)
+        ? "Instagram connection expired. Reconnect Instagram, then try again."
+        : message,
+    });
   }
-  return json(200, media);
 }
 
 async function readInstagramComments(request: Request, requestUrl: URL) {
@@ -1433,7 +1442,7 @@ type InstagramReadContext = {
 async function fetchInstagramMedia(
   context: InstagramReadContext,
 ): Promise<InstagramMediaItem[]> {
-  const url = new URL(`${graphApiBaseUrl()}/me/media`);
+  const url = new URL(`${instagramGraphBaseUrl()}/${getGraphVersion()}/me/media`);
   url.searchParams.set(
     "fields",
     [
@@ -1477,7 +1486,7 @@ async function fetchInstagramComments(
   mediaId: string,
 ): Promise<InstagramCommentItem[]> {
   const url = new URL(
-    `${graphApiBaseUrl()}/${encodeURIComponent(mediaId)}/comments`,
+    `${instagramGraphBaseUrl()}/${getGraphVersion()}/${encodeURIComponent(mediaId)}/comments`,
   );
   url.searchParams.set("fields", "id,text,timestamp,username,parent_id");
   url.searchParams.set("limit", "50");
@@ -1578,8 +1587,12 @@ function getInstagramReadContext(data: DataFile): InstagramReadContext | null {
   return null;
 }
 
-function graphApiBaseUrl() {
-  return `https://graph.facebook.com/${getGraphVersion()}`;
+function instagramGraphBaseUrl() {
+  return (
+    process.env.INSTAGRAM_GRAPH_BASE_URL ??
+    process.env.INSTAGRAM_BASE_URL ??
+    "https://graph.instagram.com"
+  );
 }
 
 function canSendPrivateReplies(data: DataFile) {
@@ -1856,7 +1869,7 @@ async function discoverInstagramWebhookAccountAliases(
 }
 
 async function fetchInstagramWebhookAccountIds(context: InstagramReadContext) {
-  const url = new URL(`${graphApiBaseUrl()}/me/media`);
+  const url = new URL(`${instagramGraphBaseUrl()}/${getGraphVersion()}/me/media`);
   url.searchParams.set("fields", "id,owner");
   url.searchParams.set("limit", "5");
   url.searchParams.set("access_token", context.accessToken);
