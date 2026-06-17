@@ -132,8 +132,10 @@ type FairUseSummary = {
 type CommentSyncResponse = {
   checked: number;
   acted: number;
+  uncertain?: number;
   failed?: number;
   errors?: string[];
+  warnings?: string[];
 };
 
 type InstagramCommentReadItem = {
@@ -524,6 +526,14 @@ function App({ currentView }: AppProps) {
           result.acted > 0
             ? `Checked ${result.checked} comments and sent ${result.acted}.`
             : "",
+        );
+      } else if ((result.uncertain ?? 0) > 0) {
+        const firstWarning = result.warnings?.[0]
+          ? ` ${result.warnings[0]}`
+          : "";
+        setError("");
+        setNotice(
+          `Checked ${result.checked} comments and sent ${result.acted}. Instagram reported an unreliable delivery result for ${result.uncertain} send attempt.${firstWarning}`,
         );
       } else {
         if (!silent || result.acted > 0) {
@@ -1659,6 +1669,14 @@ function ActivityCard({
                         Routes: {entry.deliveryAttempts.join(" -> ")}
                       </p>
                     ) : null}
+                  </div>
+                ) : null}
+                {entry.warning ? (
+                  <div className="mt-2 min-w-0 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-sm text-amber-700">
+                    <p className="font-black">Instagram reported a mixed result.</p>
+                    <p className="mt-1 break-words font-medium">
+                      {entry.warning}
+                    </p>
                   </div>
                 ) : null}
                 {entry.error ? (

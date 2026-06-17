@@ -37,6 +37,8 @@ type InstagramIntegration = {
   tokenType?: string;
   loginProvider?: "instagram";
   userId?: string;
+  graphAccountId?: string;
+  webhookUserId?: string;
   webhookAccountIds?: string[];
   permissions?: string[];
   webhookLastReceivedAt?: string;
@@ -103,13 +105,15 @@ type InstagramCommentReadItem = InstagramCommentItem & {
 type SendReplyResult =
   | {
       ok: true;
-      status: "sent" | "dry_run";
+      status: "sent" | "dry_run" | "uncertain";
       error?: undefined;
+      warning?: string;
       attempts?: string[];
     }
   | {
       ok: false;
       error: string;
+      warning?: undefined;
       status?: undefined;
       attempts?: string[];
     };
@@ -117,8 +121,10 @@ type SendReplyResult =
 type CommentSyncResult = {
   checked: number;
   acted: number;
+  uncertain: number;
   failed: number;
   errors: string[];
+  warnings: string[];
 };
 
 const dataDirectory = path.resolve(
@@ -274,6 +280,8 @@ export async function handleApiRequest(request: Request) {
         connectedAt: data.integration?.connectedAt,
         expiresAt: data.integration?.expiresAt,
         instagramUserId: data.integration?.userId,
+        instagramGraphAccountId: data.integration?.graphAccountId,
+        instagramWebhookUserId: data.integration?.webhookUserId,
         webhookAccountIds: data.integration?.webhookAccountIds ?? [],
         loginProvider: data.integration?.loginProvider,
         webhookLastReceivedAt: data.integration?.webhookLastReceivedAt,
@@ -672,11 +680,12 @@ async function sendPrivateReply(
   message: string,
   diagnosticId: string,
 ): Promise<SendReplyResult> {
+  await ensureInstagramAccountIdentity(data, diagnosticId);
   logDiagnostic("private_reply_start", {
     diagnosticId,
     commentId: safeId(commentId),
     hasInstagramAccess: Boolean(getInstagramAccessToken(data)),
-    instagramUserId: safeId(getInstagramUserId(data)),
+    instagramUserId: safeId(getInstagramMessageAccountId(data)),
     loginProvider: data.integration?.loginProvider,
     permissions: data.integration?.permissions,
     messageLength: message.length,
@@ -688,7 +697,7 @@ async function sendPrivateReply(
   }
 
   const accessToken = getInstagramAccessToken(data);
-  const instagramUserId = getInstagramUserId(data);
+  const instagramUserId = getInstagramMessageAccountId(data);
   if (accessToken && instagramUserId) {
     const instagramResult = await sendInstagramPrivateReply(
       instagramUserId,
@@ -739,6 +748,16 @@ async function sendInstagramPrivateReply(
   );
   if (meResult.ok) {
     return meResult;
+  }
+
+  if (isAmbiguousPrivateReplyOutcome(directResult.error, meResult.error)) {
+    return {
+      ok: true,
+      status: "uncertain" as const,
+      warning:
+        "Instagram reported conflicting delivery errors for this private reply. Verify the recipient inbox before retrying.",
+      attempts: [...(directResult.attempts ?? []), ...(meResult.attempts ?? [])],
+    };
   }
 
   return {
@@ -941,6 +960,7 @@ async function processInstagramEvent(
     const sendResult = await sendWebhookReply(data, event.replyTarget, dm, diagnosticId);
     entry.status = sendResult.ok ? sendResult.status : "failed";
     entry.error = sendResult.error;
+    entry.warning = sendResult.warning;
     entry.deliveryAttempts = sendResult.attempts;
 
     if (sendResult.ok && event.replyTarget.type === "comment") {
@@ -1344,8 +1364,10 @@ async function syncInstagramCommentsForData({
   const result: CommentSyncResult = {
     checked: 0,
     acted: 0,
+    uncertain: 0,
     failed: 0,
     errors: [],
+    warnings: [],
   };
 
   for (const mediaId of mediaIds) {
@@ -1422,6 +1444,12 @@ async function syncInstagramCommentsForData({
           }
           continue;
         }
+        if (latestEntry.status === "uncertain") {
+          result.uncertain += 1;
+          if (latestEntry.warning) {
+            result.warnings.push(latestEntry.warning);
+          }
+        }
       }
       result.acted += 1;
     }
@@ -1432,14 +1460,22 @@ async function syncInstagramCommentsForData({
     stateId: safeId(stateId),
     checked: result.checked,
     acted: result.acted,
+    uncertain: result.uncertain,
     failed: result.failed,
     errors: result.errors.map(summarizeMetaError),
+    warnings: result.warnings,
   });
   return result;
 }
 
 type InstagramReadContext = {
   accessToken: string;
+};
+
+type InstagramAccountIdentity = {
+  graphAccountId?: string;
+  webhookUserId?: string;
+  username?: string;
 };
 
 function createMetaApi(accessToken: string) {
@@ -1595,6 +1631,14 @@ function getInstagramAccessToken(data: DataFile) {
 
 function getInstagramUserId(data: DataFile) {
   return data.integration?.userId ?? process.env.INSTAGRAM_USER_ID;
+}
+
+function getInstagramMessageAccountId(data: DataFile) {
+  return (
+    data.integration?.graphAccountId ??
+    data.integration?.userId ??
+    process.env.INSTAGRAM_USER_ID
+  );
 }
 
 function getInstagramReadContext(data: DataFile): InstagramReadContext | null {
@@ -1878,8 +1922,11 @@ async function discoverInstagramWebhookAccountAliases(
   }
 
   try {
-    const accountIds = await fetchInstagramWebhookAccountIds(readContext);
-    return updateWebhookAccountAliases(data, accountIds, diagnosticId);
+    const identity = await fetchInstagramAccountIdentity(readContext);
+    const accountIds = await fetchInstagramWebhookAccountIds(readContext, identity);
+    const identityChanged = updateInstagramAccountIdentity(data, identity, diagnosticId);
+    const aliasChanged = updateWebhookAccountAliases(data, accountIds, diagnosticId);
+    return identityChanged || aliasChanged;
   } catch (error) {
     logDiagnostic("webhook_alias_discovery_failed", {
       diagnosticId,
@@ -1889,15 +1936,74 @@ async function discoverInstagramWebhookAccountAliases(
   }
 }
 
-async function fetchInstagramWebhookAccountIds(context: InstagramReadContext) {
+async function fetchInstagramAccountIdentity(
+  context: InstagramReadContext,
+): Promise<InstagramAccountIdentity> {
+  const payload = await callInstagramGraph<Record<string, unknown>>(context, ["me"], {
+    fields: "id,user_id,username",
+  });
+  return {
+    graphAccountId: stringFrom(payload.id) || undefined,
+    webhookUserId: stringFrom(payload.user_id) || undefined,
+    username: stringFrom(payload.username) || undefined,
+  };
+}
+
+async function fetchInstagramWebhookAccountIds(
+  context: InstagramReadContext,
+  identity?: InstagramAccountIdentity,
+) {
   const payload = await callInstagramGraph<{ data?: unknown[] }>(context, ["me", "media"], {
     fields: "id,owner",
     limit: "5",
   });
-  return (payload.data ?? [])
-    .filter(isRecord)
-    .map((item) => (isRecord(item.owner) ? stringFrom(item.owner.id) : ""))
-    .filter((value): value is string => Boolean(value));
+  return [
+    identity?.graphAccountId,
+    identity?.webhookUserId,
+    ...(payload.data ?? [])
+      .filter(isRecord)
+      .map((item) => (isRecord(item.owner) ? stringFrom(item.owner.id) : "")),
+  ].filter((value): value is string => Boolean(value));
+}
+
+function updateInstagramAccountIdentity(
+  data: DataFile,
+  identity: InstagramAccountIdentity,
+  diagnosticId: string,
+) {
+  const integration = data.integration;
+  if (!integration) {
+    return false;
+  }
+
+  const graphAccountId = identity.graphAccountId || integration.graphAccountId;
+  const webhookUserId = identity.webhookUserId || integration.webhookUserId;
+  const changed =
+    graphAccountId !== integration.graphAccountId ||
+    webhookUserId !== integration.webhookUserId;
+  if (!changed) {
+    return false;
+  }
+
+  data.integration = {
+    ...integration,
+    graphAccountId,
+    webhookUserId,
+  };
+  logDiagnostic("instagram_account_identity_updated", {
+    diagnosticId,
+    graphAccountId: safeId(graphAccountId),
+    webhookUserId: safeId(webhookUserId),
+  });
+  return true;
+}
+
+async function ensureInstagramAccountIdentity(data: DataFile, diagnosticId: string) {
+  if (data.integration?.graphAccountId && data.integration?.webhookUserId) {
+    return false;
+  }
+
+  return discoverInstagramWebhookAccountAliases(data, diagnosticId);
 }
 
 function updateWebhookAccountAliases(
@@ -2122,6 +2228,16 @@ function joinSendErrors(...errors: string[]) {
   return errors.filter(Boolean).join("\n");
 }
 
+function isAmbiguousPrivateReplyOutcome(
+  directError: string,
+  meError: string,
+) {
+  return (
+    /unsupported post request|object with id .*does not exist/i.test(directError) &&
+    /unknown error has occurred/i.test(meError)
+  );
+}
+
 function redirect(url: string, cookies: string[] = []) {
   const headers = new Headers();
   headers.set("Location", url);
@@ -2294,6 +2410,8 @@ function normalizeIntegration(value: unknown): InstagramIntegration {
     tokenType: stringFrom(value.tokenType) || undefined,
     loginProvider: stringFrom(value.loginProvider) === "instagram" ? "instagram" : undefined,
     userId: stringFrom(value.userId) || undefined,
+    graphAccountId: stringFrom(value.graphAccountId) || undefined,
+    webhookUserId: stringFrom(value.webhookUserId) || undefined,
     webhookAccountIds: Array.isArray(value.webhookAccountIds)
       ? value.webhookAccountIds.filter((id): id is string => typeof id === "string")
       : undefined,

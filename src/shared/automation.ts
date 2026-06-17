@@ -22,6 +22,7 @@ export type Rule = {
 export type ActivityStatus =
   | "preview"
   | "sent"
+  | "uncertain"
   | "failed"
   | "no_match"
   | "dry_run";
@@ -42,6 +43,7 @@ export type Activity = {
     | "instagram_mention"
     | "instagram_message";
   error?: string;
+  warning?: string;
   diagnosticId?: string;
   deliveryAttempts?: string[];
 };
