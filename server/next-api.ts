@@ -13,6 +13,7 @@ import path from "node:path";
 import bizSdk from "facebook-nodejs-business-sdk";
 import {
   cleanDraftRule,
+  composeCommentReply,
   composeDm,
   emptyDraft,
   findMatchingRule,
@@ -159,6 +160,7 @@ const starterRules: Rule[] = [
     postLabel: "Any reel",
     message: "Thanks for your comment. Here is the product link you asked for:",
     link: "https://example.com/product",
+    commentReply: "Sent you the product link in DM.",
     active: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -171,6 +173,7 @@ const starterRules: Rule[] = [
     postLabel: "General posts",
     message: "Thanks for commenting. I will send you the details here:",
     link: "",
+    commentReply: "",
     active: false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -408,11 +411,13 @@ async function handleActivity(request: Request) {
     const comment = event.comment?.trim() ?? "";
     const matchedRule = findMatchingRule(comment, data.rules);
     const dm = matchedRule ? composeDm(matchedRule) : "";
+    const commentReply = matchedRule ? composeCommentReply(matchedRule) : "";
     const entry: Activity = {
       id: randomUUID(),
       comment: comment || "(empty comment)",
       matchedRuleName: matchedRule?.name ?? "No matching rule",
       dm: dm || "No DM generated",
+      commentReply: commentReply || undefined,
       timestamp: new Date().toISOString(),
       status: "preview",
       source: "local_preview",
@@ -823,6 +828,70 @@ async function postInstagramPrivateReply(
   return { ok: true, status: "sent" as const, attempts: [`${route}: sent`] };
 }
 
+async function sendInstagramCommentReply(
+  data: DataFile,
+  commentId: string,
+  message: string,
+  diagnosticId: string,
+): Promise<SendReplyResult> {
+  logDiagnostic("comment_reply_start", {
+    diagnosticId,
+    commentId: safeId(commentId),
+    hasInstagramAccess: Boolean(getInstagramAccessToken(data)),
+    messageLength: message.length,
+  });
+
+  if (process.env.INSTAGRAM_DRY_RUN === "true") {
+    logDiagnostic("comment_reply_dry_run", { diagnosticId });
+    return { ok: true, status: "dry_run" as const, attempts: ["comment_reply_dry_run"] };
+  }
+
+  const accessToken = getInstagramAccessToken(data);
+  if (!accessToken) {
+    return {
+      ok: false,
+      error:
+        "Public comment replies require a connected Instagram professional account.",
+      attempts: ["comment_reply_missing_instagram_connection"],
+    };
+  }
+
+  const route = `Instagram ${commentId}/replies`;
+  const result = await fetch(
+    `${instagramGraphBaseUrl()}/${getGraphVersion()}/${encodeURIComponent(commentId)}/replies`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ message }),
+    },
+  );
+
+  if (!result.ok) {
+    const error = await result.text();
+    logDiagnostic("comment_reply_failed", {
+      diagnosticId,
+      route,
+      status: result.status,
+      error: summarizeMetaError(error),
+    });
+    return {
+      ok: false,
+      error: labelMetaError(route, error),
+      attempts: [`${route}: ${result.status}`],
+    };
+  }
+
+  logDiagnostic("comment_reply_sent", {
+    diagnosticId,
+    route,
+    status: result.status,
+  });
+  return { ok: true, status: "sent" as const, attempts: [`${route}: sent`] };
+}
+
 async function sendInstagramMessage(
   data: DataFile,
   senderId: string,
@@ -914,6 +983,7 @@ async function processInstagramEvent(
 
   const matchedRule = findMatchingRule(event.text, data.rules, event.mediaId);
   const dm = matchedRule ? composeDm(matchedRule) : "";
+  const commentReply = matchedRule ? composeCommentReply(matchedRule) : "";
   logDiagnostic("event_rule_match_evaluated", {
     diagnosticId,
     eventId: safeId(event.id),
@@ -923,6 +993,7 @@ async function processInstagramEvent(
     matchedRuleName: matchedRule?.name,
     triggerType: matchedRule?.triggerType,
     dmLength: dm.length,
+    commentReplyLength: commentReply.length,
   });
   const entry: Activity = {
     id: randomUUID(),
@@ -935,6 +1006,7 @@ async function processInstagramEvent(
     comment: event.text || "(empty comment)",
     matchedRuleName: matchedRule?.name ?? "No matching rule",
     dm: dm || "No DM generated",
+    commentReply: commentReply || undefined,
     timestamp: new Date().toISOString(),
     status: matchedRule ? "dry_run" : "no_match",
     source:
@@ -967,6 +1039,24 @@ async function processInstagramEvent(
 
     if (sendResult.ok && event.replyTarget.type === "comment") {
       const commentId = event.replyTarget.commentId;
+      if (commentReply) {
+        const commentReplyResult = await sendInstagramCommentReply(
+          data,
+          commentId,
+          commentReply,
+          diagnosticId,
+        );
+        entry.deliveryAttempts = [
+          ...(entry.deliveryAttempts ?? []),
+          ...(commentReplyResult.attempts ?? []),
+        ];
+        if (!commentReplyResult.ok) {
+          entry.warning = joinSendErrors(
+            entry.warning,
+            `Public comment reply failed: ${commentReplyResult.error}`,
+          );
+        }
+      }
       data.processedCommentIds = [
         commentId,
         ...(data.processedCommentIds ?? []).filter((id) => id !== commentId),
@@ -1451,6 +1541,9 @@ async function syncInstagramCommentsForData({
           if (latestEntry.warning) {
             result.warnings.push(latestEntry.warning);
           }
+        }
+        if (latestEntry.status === "sent" && latestEntry.warning) {
+          result.warnings.push(latestEntry.warning);
         }
       }
       result.acted += 1;
@@ -2230,7 +2323,7 @@ function labelMetaError(route: string, error: string) {
   return `${route}: ${error}`;
 }
 
-function joinSendErrors(...errors: string[]) {
+function joinSendErrors(...errors: Array<string | undefined>) {
   return errors.filter(Boolean).join("\n");
 }
 
@@ -2395,13 +2488,22 @@ function supabaseHeaders() {
 
 function normalizeData(data: Partial<DataFile>): DataFile {
   return {
-    rules: Array.isArray(data.rules) ? data.rules : starterRules,
+    rules: Array.isArray(data.rules)
+      ? data.rules.map(normalizeRule)
+      : starterRules.map(normalizeRule),
     activity: Array.isArray(data.activity) ? data.activity : [],
     processedCommentIds: Array.isArray(data.processedCommentIds)
       ? data.processedCommentIds.filter((id): id is string => typeof id === "string")
       : [],
     integration: normalizeIntegration(data.integration),
     fairUse: normalizeFairUse(data.fairUse),
+  };
+}
+
+function normalizeRule(rule: Rule): Rule {
+  return {
+    ...rule,
+    commentReply: rule.commentReply ?? "",
   };
 }
 

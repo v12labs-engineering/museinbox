@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   Menu,
   MessageCircle,
+  MessageSquareReply,
   PauseCircle,
   PlayCircle,
   Plus,
@@ -60,6 +61,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
   cleanDraftRule,
+  composeCommentReply,
   composeDm,
   emptyDraft,
   findMatchingRule,
@@ -300,6 +302,7 @@ function App({ currentView }: AppProps) {
     [sampleComment, rules, selectedMedia],
   );
   const matchedDm = matchedRule ? composeDm(matchedRule) : "";
+  const matchedCommentReply = matchedRule ? composeCommentReply(matchedRule) : "";
 
   useEffect(() => {
     void loadDashboard();
@@ -800,6 +803,7 @@ function App({ currentView }: AppProps) {
                 {currentView === "automations" ? (
                   <PreviewAndActivity
                     activity={activity}
+                    matchedCommentReply={matchedCommentReply}
                     matchedDm={matchedDm}
                     matchedRule={matchedRule}
                     sampleComment={sampleComment}
@@ -1476,6 +1480,19 @@ function AutomationCards({
                 {shortText(composeDm(rule), 140)}
               </p>
             </div>
+            {rule.commentReply ? (
+              <>
+                <Separator />
+                <div className="min-w-0">
+                  <span className="block text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
+                    Comment reply
+                  </span>
+                  <p className="mt-1 line-clamp-2 text-muted-foreground">
+                    {shortText(rule.commentReply, 140)}
+                  </p>
+                </div>
+              </>
+            ) : null}
           </div>
 
           {rule.pauseReason ? (
@@ -1523,6 +1540,7 @@ function AutomationCards({
 
 function PreviewAndActivity({
   activity,
+  matchedCommentReply,
   matchedDm,
   matchedRule,
   onSampleChange,
@@ -1530,6 +1548,7 @@ function PreviewAndActivity({
   sampleComment,
 }: {
   activity: Activity[];
+  matchedCommentReply: string;
   matchedDm: string;
   matchedRule: Rule | null;
   onSampleChange: (value: string) => void;
@@ -1573,6 +1592,14 @@ function PreviewAndActivity({
                     {matchedDm}
                   </p>
                 </div>
+                {matchedCommentReply ? (
+                  <div className="mt-2 flex min-w-0 gap-2 rounded-xl bg-background p-3 text-sm text-foreground shadow-sm">
+                    <MessageSquareReply className="mt-0.5 size-4 shrink-0 text-primary" />
+                    <p className="min-w-0 whitespace-pre-wrap break-words">
+                      {matchedCommentReply}
+                    </p>
+                  </div>
+                ) : null}
               </>
             ) : (
               <>
@@ -1657,6 +1684,16 @@ function ActivityCard({
                     {entry.dm}
                   </p>
                 </div>
+                {entry.commentReply ? (
+                  <div className="mt-2 min-w-0 rounded-lg border border-border bg-background p-3">
+                    <p className="text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
+                      Comment reply
+                    </p>
+                    <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">
+                      {entry.commentReply}
+                    </p>
+                  </div>
+                ) : null}
                 {entry.diagnosticId || entry.deliveryAttempts?.length ? (
                   <div className="mt-2 min-w-0 rounded-lg border border-border bg-muted/35 p-3 text-xs text-muted-foreground">
                     {entry.diagnosticId ? (
@@ -1759,16 +1796,6 @@ function SettingsView({
                 : "Connect a Business or Creator account to fetch content and create automations."}
             </p>
           </div>
-
-          {status?.webhookSubscriptionError ? (
-            <Alert className="muse-alert-warning min-w-0 overflow-hidden">
-              <AlertTriangle className="size-4" />
-              <AlertTitle>Webhook subscription needs attention</AlertTitle>
-              <AlertDescription className="min-w-0 whitespace-pre-wrap break-words text-sm">
-                {readableInstagramError(status.webhookSubscriptionError)}
-              </AlertDescription>
-            </Alert>
-          ) : null}
 
           <div className="grid min-w-0 gap-2 sm:grid-cols-2">
             {connected ? (
@@ -2081,6 +2108,25 @@ function AutomationDialog({
               }
               placeholder="https://..."
             />
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="rule-comment-reply">Public comment reply</Label>
+            <Textarea
+              id="rule-comment-reply"
+              value={draft.commentReply ?? ""}
+              onChange={(event) =>
+                onUpdateDraft((currentDraft) => ({
+                  ...currentDraft,
+                  commentReply: event.target.value,
+                }))
+              }
+              placeholder="Sent you the details in DM."
+              rows={3}
+            />
+            <p className="text-xs font-medium text-muted-foreground">
+              Optional. If filled, MuseInbox replies under the matching Instagram comment.
+            </p>
           </div>
 
           <div className="flex items-center justify-between rounded-xl border border-border bg-muted/35 p-3">

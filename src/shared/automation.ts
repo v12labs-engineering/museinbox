@@ -11,6 +11,7 @@ export type Rule = {
   mediaType?: string;
   message: string;
   link: string;
+  commentReply?: string;
   active: boolean;
   consecutiveFailures?: number;
   pauseReason?: string;
@@ -33,6 +34,7 @@ export type Activity = {
   comment: string;
   matchedRuleName: string;
   dm: string;
+  commentReply?: string;
   timestamp: string;
   status: ActivityStatus;
   source:
@@ -57,6 +59,7 @@ export const emptyDraft: DraftRule = {
   postLabel: "",
   message: "",
   link: "",
+  commentReply: "",
   active: true,
 };
 
@@ -66,6 +69,10 @@ export function normalizeText(value: string) {
 
 export function composeDm(rule: Rule) {
   return [rule.message.trim(), rule.link.trim()].filter(Boolean).join("\n\n");
+}
+
+export function composeCommentReply(rule: Rule) {
+  return rule.commentReply?.trim() ?? "";
 }
 
 export function findMatchingRule(comment: string, rules: Rule[], mediaId?: string) {
@@ -107,6 +114,7 @@ export function ruleToDraft(rule: Rule): DraftRule {
     mediaType: rule.mediaType,
     message: rule.message,
     link: rule.link,
+    commentReply: rule.commentReply ?? "",
     active: rule.active,
   };
 }
@@ -122,5 +130,6 @@ export function cleanDraftRule(draft: DraftRule): DraftRule {
     mediaType: draft.mediaType?.trim(),
     message: draft.message.trim(),
     link: draft.link.trim(),
+    commentReply: draft.commentReply?.trim(),
   };
 }
