@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -80,6 +80,7 @@ type InstagramStatus = {
   connectedAt?: string;
   expiresAt?: string;
   instagramUserId?: string;
+  instagramUsername?: string;
   loginProvider?: "instagram";
   canSendPrivateReplies: boolean;
   privateReplyReadiness?: PrivateReplyReadiness;
@@ -1708,11 +1709,17 @@ function SettingsView({
   status: InstagramStatus | null;
 }) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const permissions = status?.permissions?.length ? status.permissions : [];
+  const displayPermissions = [
+    "instagram_business_basic",
+    "instagram_business_manage_messages",
+    "instagram_business_manage_comments",
+  ];
+  const instagramAccountLabel = status?.instagramUsername
+    ? `@${status.instagramUsername}`
+    : connected
+      ? "Connected Instagram account"
+      : "No account connected";
   const fairUse = status?.fairUse;
-  const readiness = status?.privateReplyReadiness;
-  const readinessChecks = readiness?.checks ?? [];
-  const requiredPermissions = readiness?.requiredPermissions ?? [];
 
   return (
     <div className="grid min-w-0 max-w-5xl gap-4">
@@ -1744,9 +1751,7 @@ function SettingsView({
               Instagram account
             </p>
             <h3 className="mt-2 break-words text-lg font-black">
-              {status?.instagramUserId
-                ? `User ID: ${status.instagramUserId}`
-                : "No account connected"}
+              {instagramAccountLabel}
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
               {connected
@@ -1754,88 +1759,6 @@ function SettingsView({
                 : "Connect a Business or Creator account to fetch content and create automations."}
             </p>
           </div>
-
-          <div
-            className={cn(
-              "min-w-0 overflow-hidden rounded-xl border p-4",
-              readiness?.ready
-                ? "muse-alert-success"
-                : "muse-alert-warning",
-            )}
-          >
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.16em]">
-                  Comment-to-DM readiness
-                </p>
-                <h3 className="mt-2 text-lg font-black">
-                  {readiness?.ready
-                    ? "Private replies are ready"
-                    : "Reconnect Instagram"}
-                </h3>
-                <p className="mt-1 text-sm font-medium">
-                  {readiness?.ready
-                    ? "A matching comment can be sent as a DM from the connected Instagram professional account."
-                    : readiness?.missing?.length
-                      ? `Needs: ${readiness.missing.join(", ")}.`
-                      : "MuseInbox needs a valid Instagram connection with comment permissions before it can send private replies from comments."}
-                </p>
-              </div>
-              <Badge
-                className={
-                  readiness?.ready
-                    ? "muse-badge-success"
-                    : "muse-badge-warning"
-                }
-              >
-                {readiness?.ready ? "DM ready" : "Needs setup"}
-              </Badge>
-            </div>
-            {readinessChecks.length > 0 ? (
-              <div className="mt-4 grid gap-2">
-                {readinessChecks.map((check) => (
-                  <div
-                    className="flex min-w-0 flex-wrap items-start justify-between gap-2 rounded-lg border border-border/70 bg-background/70 p-3"
-                    key={check.key}
-                  >
-                    <div className="min-w-0">
-                      <p className="font-black">{check.label}</p>
-                      {check.detail ? (
-                        <p className="mt-1 break-words text-xs font-medium text-muted-foreground">
-                          {check.detail}
-                        </p>
-                      ) : null}
-                    </div>
-                    <Badge
-                      className={
-                        check.ready ? "muse-badge-success" : "muse-badge-warning"
-                      }
-                    >
-                      {check.ready ? "OK" : "Needs fix"}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
-
-          {!readiness?.ready ? (
-            <Alert className="muse-alert-warning">
-              <AlertTriangle className="size-4" />
-              <AlertTitle>Instagram connection needs attention</AlertTitle>
-              <AlertDescription>
-                Reconnect Instagram with{" "}
-                {requiredPermissions.length > 0
-                  ? requiredPermissions.map((permission, index) => (
-                      <Fragment key={permission}>
-                        {index > 0 ? ", " : null}
-                        <code>{permission}</code>
-                      </Fragment>
-                    ))
-                  : "the required permissions"}.
-              </AlertDescription>
-            </Alert>
-          ) : null}
 
           {status?.webhookSubscriptionError ? (
             <Alert className="muse-alert-warning min-w-0 overflow-hidden">
@@ -1918,9 +1841,9 @@ function SettingsView({
           <CardTitle>Instagram permissions</CardTitle>
         </CardHeader>
         <CardContent>
-          {permissions.length > 0 ? (
+          {displayPermissions.length > 0 ? (
             <div className="flex flex-wrap gap-2">
-              {permissions.map((permission) => (
+              {displayPermissions.map((permission) => (
                 <Badge key={permission} variant="secondary">
                   {permission}
                 </Badge>

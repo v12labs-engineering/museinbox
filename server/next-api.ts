@@ -37,6 +37,7 @@ type InstagramIntegration = {
   tokenType?: string;
   loginProvider?: "instagram";
   userId?: string;
+  username?: string;
   graphAccountId?: string;
   webhookUserId?: string;
   webhookAccountIds?: string[];
@@ -280,6 +281,7 @@ export async function handleApiRequest(request: Request) {
         connectedAt: data.integration?.connectedAt,
         expiresAt: data.integration?.expiresAt,
         instagramUserId: data.integration?.userId,
+        instagramUsername: data.integration?.username,
         instagramGraphAccountId: data.integration?.graphAccountId,
         instagramWebhookUserId: data.integration?.webhookUserId,
         webhookAccountIds: data.integration?.webhookAccountIds ?? [],
@@ -1978,9 +1980,11 @@ function updateInstagramAccountIdentity(
 
   const graphAccountId = identity.graphAccountId || integration.graphAccountId;
   const webhookUserId = identity.webhookUserId || integration.webhookUserId;
+  const username = identity.username || integration.username;
   const changed =
     graphAccountId !== integration.graphAccountId ||
-    webhookUserId !== integration.webhookUserId;
+    webhookUserId !== integration.webhookUserId ||
+    username !== integration.username;
   if (!changed) {
     return false;
   }
@@ -1989,11 +1993,13 @@ function updateInstagramAccountIdentity(
     ...integration,
     graphAccountId,
     webhookUserId,
+    username,
   };
   logDiagnostic("instagram_account_identity_updated", {
     diagnosticId,
     graphAccountId: safeId(graphAccountId),
     webhookUserId: safeId(webhookUserId),
+    username,
   });
   return true;
 }
