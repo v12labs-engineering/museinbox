@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   BarChart3,
@@ -179,10 +180,16 @@ type InstagramMediaItem = {
   likeCount?: number;
 };
 
-type AppView = "dashboard" | "automations" | "activity" | "settings";
+type AppView =
+  | "dashboard"
+  | "automations"
+  | "automation-form"
+  | "activity"
+  | "settings";
 
 type AppProps = {
   currentView: AppView;
+  automationRuleId?: string;
 };
 
 const navItems = [
@@ -267,7 +274,8 @@ export function InstagramButtonIcon() {
   );
 }
 
-function App({ currentView }: AppProps) {
+function App({ automationRuleId, currentView }: AppProps) {
+  const router = useRouter();
   const [rules, setRules] = useState<Rule[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
@@ -306,14 +314,40 @@ function App({ currentView }: AppProps) {
   const activeAnyRules = rules.filter(
     (rule) => rule.active && rule.triggerType === "any",
   );
+  const matchMediaId =
+    currentView === "automation-form" ? draft.mediaId : selectedMedia?.id;
   const matchedRule = useMemo(
-    () => findMatchingRule(sampleComment, rules, selectedMedia?.id),
-    [sampleComment, rules, selectedMedia],
+    () => findMatchingRule(sampleComment, rules, matchMediaId),
+    [sampleComment, rules, matchMediaId],
   );
 
   useEffect(() => {
     void loadDashboard();
   }, []);
+
+  useEffect(() => {
+    if (currentView !== "automation-form" || automationRuleId || media.length === 0) {
+      return;
+    }
+
+    const mediaId = new URLSearchParams(window.location.search).get("mediaId");
+    if (!mediaId || draft.mediaId === mediaId) {
+      return;
+    }
+
+    const item = media.find((mediaItem) => mediaItem.id === mediaId);
+    if (!item) {
+      return;
+    }
+
+    setDraft((currentDraft) => ({
+      ...currentDraft,
+      mediaId: item.id,
+      mediaPermalink: item.permalink,
+      mediaType: item.mediaType,
+      postLabel: mediaLabel(item),
+    }));
+  }, [automationRuleId, currentView, draft.mediaId, media]);
 
   async function loadDashboard() {
     try {
@@ -325,13 +359,21 @@ function App({ currentView }: AppProps) {
       setRules(nextRules);
       setActivity(nextActivity);
       setStatus(nextStatus);
-      setSelectedRuleId((currentId) => currentId ?? nextRules[0]?.id ?? null);
-      setDraft((currentDraft) => {
-        if (currentDraft !== emptyDraft) {
-          return currentDraft;
-        }
-        return nextRules[0] ? ruleToDraft(nextRules[0]) : emptyDraft;
-      });
+      if (currentView === "automation-form") {
+        const routeRule = automationRuleId
+          ? nextRules.find((rule) => rule.id === automationRuleId)
+          : null;
+        setSelectedRuleId(routeRule?.id ?? null);
+        setDraft(routeRule ? ruleToDraft(routeRule) : emptyDraft);
+      } else {
+        setSelectedRuleId((currentId) => currentId ?? nextRules[0]?.id ?? null);
+        setDraft((currentDraft) => {
+          if (currentDraft !== emptyDraft) {
+            return currentDraft;
+          }
+          return nextRules[0] ? ruleToDraft(nextRules[0]) : emptyDraft;
+        });
+      }
       setError("");
       if (nextStatus.connected) {
         await loadInstagramMedia();
@@ -373,7 +415,7 @@ function App({ currentView }: AppProps) {
   function selectRule(rule: Rule) {
     setSelectedRuleId(rule.id);
     setDraft(ruleToDraft(rule));
-    setAutomationModalOpen(currentView !== "automations");
+    router.push(`/automations/${rule.id}`);
   }
 
   function createRule() {
@@ -386,12 +428,12 @@ function App({ currentView }: AppProps) {
         mediaType: selectedMedia.mediaType,
         postLabel: mediaLabel(selectedMedia),
       });
-      setAutomationModalOpen(currentView !== "automations");
+      router.push(`/automations/new?mediaId=${encodeURIComponent(selectedMedia.id)}`);
       return;
     }
 
     setDraft(emptyDraft);
-    setAutomationModalOpen(currentView !== "automations");
+    router.push("/automations/new");
   }
 
   async function saveRule(event: FormEvent<HTMLFormElement>) {
@@ -422,6 +464,9 @@ function App({ currentView }: AppProps) {
       if (automationModalOpen) {
         setAutomationModalOpen(false);
       }
+      if (currentView === "automation-form" && !selectedRule) {
+        router.replace(`/automations/${savedRule.id}`);
+      }
       setError("");
     } catch (saveError) {
       setError(messageFromError(saveError));
@@ -441,6 +486,9 @@ function App({ currentView }: AppProps) {
       }
       if (automationModalOpen) {
         setAutomationModalOpen(false);
+      }
+      if (currentView === "automation-form") {
+        router.replace("/automations");
       }
       setError("");
     } catch (deleteError) {
@@ -644,17 +692,20 @@ function App({ currentView }: AppProps) {
   const viewTitle = {
     dashboard: "Content dashboard",
     automations: "Automations",
+    "automation-form": automationRuleId ? "Edit automation" : "New automation",
     activity: "Activity",
     settings: "Settings",
   }[currentView];
   const viewSubtitle = {
     dashboard: "Pick a post, attach a comment trigger, and preview the DM.",
     automations: "Manage every comment-to-DM rule from one clear list.",
+    "automation-form": "Build the trigger, message, and Instagram preview in one focused flow.",
     activity: "Review previews, live matches, and delivery issues.",
     settings: "Check Instagram connection health and local reply mode.",
   }[currentView];
   const isEditingRule = Boolean(selectedRule);
   const connectionReady = Boolean(status?.connected);
+  const navView = currentView === "automation-form" ? "automations" : currentView;
 
   useEffect(() => {
     if (!statusLoaded || connectionReady) {
@@ -675,7 +726,7 @@ function App({ currentView }: AppProps) {
       {!statusLoaded ? <ConnectionProgressBar /> : null}
       <div className="mx-auto grid min-h-screen w-full max-w-[1540px] lg:h-screen lg:grid-cols-[252px_minmax(0,1fr)] lg:overflow-hidden">
         <DesktopSidebar
-          currentView={currentView}
+          currentView={navView}
           connected={connectionReady}
           onDisconnect={disconnectInstagram}
         />
@@ -685,7 +736,7 @@ function App({ currentView }: AppProps) {
             <div className="flex min-w-0 items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
                 <MobileMenu
-                  currentView={currentView}
+                  currentView={navView}
                   connected={connectionReady}
                   onDisconnect={disconnectInstagram}
                 />
@@ -767,13 +818,30 @@ function App({ currentView }: AppProps) {
               />
             ) : currentView === "activity" ? (
               <ActivityView activity={activity} />
+            ) : currentView === "automation-form" ? (
+              <AutomationWorkspace
+                activity={activity}
+                draft={draft}
+                formInvalid={formInvalid}
+                isEditingRule={isEditingRule}
+                media={media}
+                matchedRule={matchedRule}
+                sampleComment={sampleComment}
+                selectedRule={selectedRule}
+                onDeleteRule={deleteRule}
+                onSampleChange={setSampleComment}
+                onSaveRule={saveRule}
+                onSelectMediaTarget={selectMediaTarget}
+                onTestComment={testComment}
+                onUpdateDraft={setDraft}
+              />
             ) : (
               <section
                 className={cn(
                   "grid min-w-0 gap-4",
                   currentView === "dashboard"
                     ? "xl:grid-cols-[minmax(280px,0.82fr)_minmax(0,1.45fr)]"
-                    : "2xl:grid-cols-[minmax(360px,0.85fr)_minmax(740px,1.15fr)]",
+                    : "max-w-5xl",
                 )}
               >
                 {currentView === "dashboard" ? (
@@ -810,32 +878,13 @@ function App({ currentView }: AppProps) {
                     onToggleRule={toggleRule}
                   />
                 </div>
-
-                {currentView === "automations" ? (
-                  <AutomationWorkspace
-                    activity={activity}
-                    draft={draft}
-                    formInvalid={formInvalid}
-                    isEditingRule={isEditingRule}
-                    media={media}
-                    matchedRule={matchedRule}
-                    sampleComment={sampleComment}
-                    selectedRule={selectedRule}
-                    onDeleteRule={deleteRule}
-                    onSampleChange={setSampleComment}
-                    onSaveRule={saveRule}
-                    onSelectMediaTarget={selectMediaTarget}
-                    onTestComment={testComment}
-                    onUpdateDraft={setDraft}
-                  />
-                ) : null}
               </section>
             )}
           </div>
         </section>
       </div>
 
-      <MobileBottomNav currentView={currentView} />
+      <MobileBottomNav currentView={navView} />
 
       <AutomationDialog
         draft={draft}
@@ -1901,15 +1950,19 @@ function PhoneAutomationPreview({
           </div>
         </div>
       </div>
-      <Tabs value={mode} onValueChange={(value) => setMode(value as PreviewMode)}>
-        <TabsList className="grid w-[300px] grid-cols-3 rounded-full">
-          <TabsTrigger className="rounded-full" value="post">
+      <Tabs
+        className="w-full max-w-[340px]"
+        value={mode}
+        onValueChange={(value) => setMode(value as PreviewMode)}
+      >
+        <TabsList className="grid w-full grid-cols-3 rounded-md">
+          <TabsTrigger className="rounded-sm" value="post">
             Post
           </TabsTrigger>
-          <TabsTrigger className="rounded-full" value="comments">
+          <TabsTrigger className="rounded-sm" value="comments">
             Comments
           </TabsTrigger>
-          <TabsTrigger className="rounded-full" value="dm">
+          <TabsTrigger className="rounded-sm" value="dm">
             DM
           </TabsTrigger>
         </TabsList>
