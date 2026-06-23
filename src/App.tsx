@@ -1933,9 +1933,9 @@ function PhoneAutomationPreview({
 
   return (
     <div className="grid justify-items-center gap-3">
-      <div className="w-full max-w-[340px] rounded-lg border border-border bg-muted/25 p-3">
-        <div className="mx-auto h-[620px] w-[282px] overflow-hidden rounded-md border-[10px] border-[#111827] bg-[#101010]">
-          <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-md bg-[#0f0f0f] text-[#f7f7f2]">
+      <div className="w-full max-w-[360px] rounded-lg bg-[#f3f3f1] px-3 py-5">
+        <div className="mx-auto h-[680px] w-[320px] overflow-hidden rounded-[3rem] border-[14px] border-[#111827] bg-[#101010] shadow-[0_26px_70px_rgb(17_24_39/0.22)]">
+          <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-[2.08rem] bg-[#0f0f0f] text-[#f7f7f2]">
             <PhoneStatusBar />
             {mode === "post" ? (
               <PostPreview
@@ -1963,18 +1963,18 @@ function PhoneAutomationPreview({
         </div>
       </div>
       <Tabs
-        className="w-full max-w-[340px]"
+        className="w-full max-w-[318px]"
         value={mode}
         onValueChange={(value) => setMode(value as PreviewMode)}
       >
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="post">
+        <TabsList className="grid w-full grid-cols-3 rounded-full bg-[#e8e8e6] p-1">
+          <TabsTrigger className="rounded-full" value="post">
             Post
           </TabsTrigger>
-          <TabsTrigger value="comments">
+          <TabsTrigger className="rounded-full" value="comments">
             Comments
           </TabsTrigger>
-          <TabsTrigger value="dm">
+          <TabsTrigger className="rounded-full" value="dm">
             DM
           </TabsTrigger>
         </TabsList>
@@ -1985,11 +1985,13 @@ function PhoneAutomationPreview({
 
 function PhoneStatusBar() {
   return (
-    <div className="flex h-10 items-center justify-between bg-[#141414] px-10 text-xs font-black">
+    <div className="flex h-11 items-center justify-between bg-[#141414] px-9 text-xs font-black">
       <span>5:11</span>
-      <span className="h-2 w-12 rounded-full bg-[#2d2d2d]" />
+      <span className="h-2.5 w-14 rounded-full bg-[#2d2d2d]" />
       <span className="flex items-center gap-1">
-        <span className="h-2 w-3 rounded-sm bg-[#f7f7f2]" />
+        <span className="h-2 w-1 rounded-sm bg-[#f7f7f2]" />
+        <span className="h-2.5 w-1 rounded-sm bg-[#f7f7f2]" />
+        <span className="h-3 w-1 rounded-sm bg-[#f7f7f2]" />
         <span className="h-2 w-4 rounded-sm border border-[#f7f7f2]" />
       </span>
     </div>
@@ -2009,18 +2011,21 @@ function PostPreview({
 }) {
   return (
     <div className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)]">
-      <div className="border-b border-[#1f1f1f] px-4 pb-3 text-center">
-        <p className="text-[0.68rem] font-black uppercase text-[#777]">
+      <div className="relative border-b border-[#1f1f1f] px-4 pb-3 text-center">
+        <span className="absolute left-3 top-1 text-3xl leading-none text-[#d9d9d9]">
+          ‹
+        </span>
+        <p className="text-[0.68rem] font-black uppercase leading-none text-[#6e6e6e]">
           {accountName}
         </p>
-        <p className="text-sm font-black">Posts</p>
+        <p className="mt-1 text-base font-black leading-none">Posts</p>
       </div>
       <InstagramPostHeader accountName={accountName} selectedMedia={selectedMedia} />
       <div className="min-h-0 overflow-hidden">
         <div className="aspect-square bg-[#1d1d1d]">
           <PhoneMediaImage selectedMedia={selectedMedia} />
         </div>
-        <div className="space-y-2 px-3 py-2 text-xs">
+        <div className="space-y-2 px-3 py-2 text-xs leading-snug">
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-2">
               <Heart className="size-5" />
@@ -2029,6 +2034,7 @@ function PostPreview({
             </span>
             <Bookmark className="size-5" />
           </div>
+          <p className="font-bold">17 likes</p>
           <p className="font-bold">
             <span>{accountName}</span>{" "}
             <span className="font-medium text-[#ededed]">
@@ -2059,23 +2065,25 @@ function CommentsPreview({
 }) {
   return (
     <div className="relative min-h-0 overflow-hidden">
-      <PostPreview
-        accountName={accountName}
-        draft={{
-          ...emptyDraft,
-          message: "Post content remains behind the comments drawer.",
-        }}
-        postTitle="Post preview"
-        selectedMedia={selectedMedia}
-      />
-      <div className="absolute inset-x-0 bottom-0 h-[410px] rounded-t-md border-t border-[#383838] bg-[#252525]">
+      <div className="absolute inset-0 opacity-55">
+        <PostPreview
+          accountName={accountName}
+          draft={{
+            ...emptyDraft,
+            message: "Post content remains behind the comments drawer.",
+          }}
+          postTitle="Post preview"
+          selectedMedia={selectedMedia}
+        />
+      </div>
+      <div className="absolute inset-x-0 bottom-0 h-[430px] rounded-t-[2rem] border-t border-[#383838] bg-[#252525] shadow-[0_-18px_38px_rgb(0_0_0/0.55)]">
         <div className="mx-auto mt-3 h-1 w-7 rounded-full bg-[#bfbfbf]" />
         <div className="mt-3 flex items-center justify-between border-b border-[#363636] px-5 pb-3">
           <span className="w-5" />
-          <p className="text-sm font-black">Comments</p>
+          <p className="text-base font-black">Comments</p>
           <Send className="size-5" />
         </div>
-        <div className="grid gap-3 px-4 py-4 text-sm">
+        <div className="grid gap-3 px-4 py-5 text-sm">
           <div className="grid grid-cols-[32px_minmax(0,1fr)_20px] gap-3">
             <AvatarDot />
             <div className="min-w-0">
@@ -2087,13 +2095,23 @@ function CommentsPreview({
               </p>
               <p className="mt-1 text-xs font-bold text-[#858585]">Reply</p>
               {isMatched ? (
-                <p className="mt-2 rounded-lg bg-[#343434] px-3 py-2 text-xs text-[#f1f1f1]">
+                <p className="mt-2 rounded-2xl bg-[#343434] px-3 py-2 text-xs text-[#f1f1f1]">
                   {commentReply}
                 </p>
               ) : null}
             </div>
             <Heart className="mt-2 size-4 text-[#a5a5a5]" />
           </div>
+        </div>
+        <div className="absolute inset-x-4 bottom-[72px] flex items-center justify-between text-lg">
+          <span>♥</span>
+          <span>🙌</span>
+          <span>🔥</span>
+          <span>👏</span>
+          <span>😢</span>
+          <span>😍</span>
+          <span>😮</span>
+          <span>😂</span>
         </div>
         <div className="absolute inset-x-4 bottom-4 grid grid-cols-[32px_minmax(0,1fr)] items-center gap-2">
           <AvatarDot />
@@ -2119,7 +2137,7 @@ function DmPreview({
     <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]">
       <div className="flex items-center justify-between border-b border-[#2a2a2a] px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="text-2xl leading-none">‹</span>
+          <span className="text-3xl leading-none">‹</span>
           <AvatarDot />
           <p className="truncate text-sm font-black">{accountName}</p>
         </div>
@@ -2129,12 +2147,12 @@ function DmPreview({
         </div>
       </div>
       <div className="min-h-0 px-4 py-5">
-        <div className="grid grid-cols-[32px_minmax(0,1fr)] items-end gap-3">
+        <div className="mt-1 grid grid-cols-[32px_minmax(0,1fr)] items-end gap-3">
           <AvatarDot />
-          <div className="rounded-lg bg-[#2d2d2d] px-4 py-3 text-sm">
+          <div className="rounded-2xl bg-[#2d2d2d] px-4 py-3 text-sm shadow-[0_8px_18px_rgb(0_0_0/0.24)]">
             <p className="whitespace-pre-wrap break-words">{dmText}</p>
             <button
-              className="mt-3 w-full rounded-lg bg-[#3c3c3c] px-3 py-2 font-bold"
+              className="mt-3 w-full rounded-lg bg-[#3c3c3c] px-3 py-2 font-bold text-[#f1f1f1]"
               type="button"
             >
               Click
