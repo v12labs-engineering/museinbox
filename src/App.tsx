@@ -53,6 +53,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
@@ -1022,7 +1029,7 @@ function MobileMenu({
             />
           ))}
         </nav>
-        <div className="mt-6 rounded-md border border-border bg-card p-3">
+        <div className="mt-6 rounded-lg border border-border bg-card p-3">
           <p className="text-sm font-bold">
             {connected ? "Connected" : "Not connected"}
           </p>
@@ -1152,7 +1159,7 @@ function ContentBrowser({
           {loading ? (
             Array.from({ length: 4 }).map((_, index) => (
               <div
-                className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-md border border-border p-2"
+                className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-lg border border-border p-2"
                 key={index}
               >
                 <Skeleton className="size-[72px] rounded-md" />
@@ -1173,7 +1180,7 @@ function ContentBrowser({
             media.map((item) => (
               <button
                 className={cn(
-                  "grid min-w-0 grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-md border border-border bg-background p-2 text-left transition hover:border-primary/40 hover:bg-primary/5",
+                  "grid min-w-0 grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-lg border border-border bg-background p-2 text-left transition hover:border-primary/40 hover:bg-primary/5",
                   selectedMedia?.id === item.id &&
                     "border-primary/50 bg-primary/10",
                 )}
@@ -1296,7 +1303,7 @@ function CommentReadout({
 }) {
   if (loading) {
     return (
-      <div className="grid gap-2 rounded-md border border-border bg-muted/35 p-3">
+      <div className="grid gap-2 rounded-lg border border-border bg-muted/35 p-3">
         <Skeleton className="h-4 w-40" />
         <Skeleton className="h-14 w-full" />
       </div>
@@ -1305,7 +1312,7 @@ function CommentReadout({
 
   if (!comments) {
     return (
-      <div className="rounded-md border border-dashed border-border bg-muted/25 p-3 text-sm font-medium text-muted-foreground">
+      <div className="rounded-lg border border-dashed border-border bg-muted/25 p-3 text-sm font-medium text-muted-foreground">
         Read comments first to confirm Instagram can see the exact test comment before sending any DM.
       </div>
     );
@@ -1313,14 +1320,14 @@ function CommentReadout({
 
   if (comments.length === 0) {
     return (
-      <div className="rounded-md border border-border bg-muted/35 p-3 text-sm font-semibold text-muted-foreground">
+      <div className="rounded-lg border border-border bg-muted/35 p-3 text-sm font-semibold text-muted-foreground">
         Instagram returned no comments for this post/reel.
       </div>
     );
   }
 
   return (
-    <div className="min-w-0 rounded-md border border-border bg-background">
+    <div className="min-w-0 rounded-lg border border-border bg-background">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
         <div>
           <p className="text-sm font-black">Comments visible to MuseInbox</p>
@@ -1340,7 +1347,7 @@ function CommentReadout({
       <div className="grid max-h-80 min-w-0 gap-2 overflow-auto p-3">
         {comments.map((comment) => (
           <article
-            className="min-w-0 rounded-md border border-border bg-muted/25 p-3"
+            className="min-w-0 rounded-lg border border-border bg-muted/25 p-3"
             key={comment.id}
           >
             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1442,7 +1449,7 @@ function AutomationPanel({
                 visibleRules.map((rule) => (
                   <div
                     className={cn(
-                      "grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-md border border-border bg-background p-3",
+                      "grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-lg border border-border bg-background p-3",
                       selectedRuleId === rule.id &&
                         "border-primary/50 bg-primary/10",
                     )}
@@ -1511,7 +1518,7 @@ function AutomationCards({
     <div className="grid gap-3 lg:grid-cols-2">
       {rules.map((rule) => (
         <article
-          className="grid min-w-0 gap-4 rounded-md border border-border bg-background p-4 transition hover:border-primary/35"
+          className="grid min-w-0 gap-4 rounded-lg border border-border bg-background p-4 transition hover:border-primary/35"
           key={rule.id}
         >
           <div className="flex min-w-0 items-start justify-between gap-3">
@@ -1529,7 +1536,7 @@ function AutomationCards({
             <RuleStatusBadge active={rule.active} />
           </div>
 
-          <div className="grid gap-3 rounded-md border border-border bg-muted/30 p-3 text-sm">
+          <div className="grid gap-3 rounded-lg border border-border bg-muted/30 p-3 text-sm">
             <div className="min-w-0">
               <span className="block text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
                 Post/Reel
@@ -1674,7 +1681,7 @@ function AutomationWorkspace({
                 sampleComment={sampleComment}
                 selectedMedia={selectedMedia}
               />
-              <div className="grid gap-2 rounded-md border border-border bg-muted/30 p-3">
+              <div className="grid gap-2 rounded-lg border border-border bg-muted/30 p-3">
                 <Label htmlFor="sample-comment">Sample comment</Label>
                 <Textarea
                   id="sample-comment"
@@ -1785,19 +1792,24 @@ function AutomationForm({
 
       <div className="grid gap-2">
         <Label htmlFor="rule-media">Post or reel</Label>
-        <select
-          id="rule-media"
-          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          value={draft.mediaId ?? ""}
-          onChange={(event) => onSelectMediaTarget(event.target.value)}
+        <Select
+          value={draft.mediaId ?? "all"}
+          onValueChange={(value) =>
+            onSelectMediaTarget(value === "all" ? "" : value)
+          }
         >
-          <option value="">All posts and reels</option>
+          <SelectTrigger id="rule-media" aria-label="Post or reel">
+            <SelectValue placeholder="All posts and reels" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All posts and reels</SelectItem>
           {media.map((item) => (
-            <option key={item.id} value={item.id}>
+            <SelectItem key={item.id} value={item.id}>
               {mediaLabel(item)}
-            </option>
+            </SelectItem>
           ))}
-        </select>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="grid gap-2">
@@ -1850,7 +1862,7 @@ function AutomationForm({
         </p>
       </div>
 
-      <div className="flex items-center justify-between rounded-md border border-border bg-muted/35 p-3">
+      <div className="flex items-center justify-between rounded-lg border border-border bg-muted/35 p-3">
         <div>
           <Label htmlFor="rule-active">Active</Label>
           <p className="text-sm text-muted-foreground">
@@ -1921,7 +1933,7 @@ function PhoneAutomationPreview({
 
   return (
     <div className="grid justify-items-center gap-3">
-      <div className="w-full max-w-[340px] rounded-md border border-border bg-muted/25 p-3">
+      <div className="w-full max-w-[340px] rounded-lg border border-border bg-muted/25 p-3">
         <div className="mx-auto h-[620px] w-[282px] overflow-hidden rounded-md border-[10px] border-[#111827] bg-[#101010]">
           <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-md bg-[#0f0f0f] text-[#f7f7f2]">
             <PhoneStatusBar />
@@ -1955,14 +1967,14 @@ function PhoneAutomationPreview({
         value={mode}
         onValueChange={(value) => setMode(value as PreviewMode)}
       >
-        <TabsList className="grid w-full grid-cols-3 rounded-md">
-          <TabsTrigger className="rounded-sm" value="post">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="post">
             Post
           </TabsTrigger>
-          <TabsTrigger className="rounded-sm" value="comments">
+          <TabsTrigger value="comments">
             Comments
           </TabsTrigger>
-          <TabsTrigger className="rounded-sm" value="dm">
+          <TabsTrigger value="dm">
             DM
           </TabsTrigger>
         </TabsList>
@@ -2075,7 +2087,7 @@ function CommentsPreview({
               </p>
               <p className="mt-1 text-xs font-bold text-[#858585]">Reply</p>
               {isMatched ? (
-                <p className="mt-2 rounded-md bg-[#343434] px-3 py-2 text-xs text-[#f1f1f1]">
+                <p className="mt-2 rounded-lg bg-[#343434] px-3 py-2 text-xs text-[#f1f1f1]">
                   {commentReply}
                 </p>
               ) : null}
@@ -2119,10 +2131,10 @@ function DmPreview({
       <div className="min-h-0 px-4 py-5">
         <div className="grid grid-cols-[32px_minmax(0,1fr)] items-end gap-3">
           <AvatarDot />
-          <div className="rounded-md bg-[#2d2d2d] px-4 py-3 text-sm">
+          <div className="rounded-lg bg-[#2d2d2d] px-4 py-3 text-sm">
             <p className="whitespace-pre-wrap break-words">{dmText}</p>
             <button
-              className="mt-3 w-full rounded-md bg-[#3c3c3c] px-3 py-2 font-bold"
+              className="mt-3 w-full rounded-lg bg-[#3c3c3c] px-3 py-2 font-bold"
               type="button"
             >
               Click
@@ -2256,7 +2268,7 @@ function ActivityCard({
           ) : (
             activity.map((entry) => (
               <article
-                className="min-w-0 rounded-md border border-border bg-background p-4"
+                className="min-w-0 rounded-lg border border-border bg-background p-4"
                 key={entry.id}
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
@@ -2273,10 +2285,10 @@ function ActivityCard({
                     {entry.status.replace("_", " ")}
                   </Badge>
                 </div>
-                <p className="mt-3 rounded-md bg-muted/55 p-3 text-sm font-semibold break-words">
+                <p className="mt-3 rounded-lg bg-muted/55 p-3 text-sm font-semibold break-words">
                   “{entry.comment}”
                 </p>
-                <div className="mt-2 min-w-0 rounded-md border border-border bg-background p-3">
+                <div className="mt-2 min-w-0 rounded-lg border border-border bg-background p-3">
                   <p className="text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
                     DM attempted
                   </p>
@@ -2285,7 +2297,7 @@ function ActivityCard({
                   </p>
                 </div>
                 {entry.commentReply ? (
-                  <div className="mt-2 min-w-0 rounded-md border border-border bg-background p-3">
+                  <div className="mt-2 min-w-0 rounded-lg border border-border bg-background p-3">
                     <p className="text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
                       Comment reply
                     </p>
@@ -2295,7 +2307,7 @@ function ActivityCard({
                   </div>
                 ) : null}
                 {entry.diagnosticId || entry.deliveryAttempts?.length ? (
-                  <div className="mt-2 min-w-0 rounded-md border border-border bg-muted/35 p-3 text-xs text-muted-foreground">
+                  <div className="mt-2 min-w-0 rounded-lg border border-border bg-muted/35 p-3 text-xs text-muted-foreground">
                     {entry.diagnosticId ? (
                       <p className="font-black">
                         Debug ID:{" "}
@@ -2310,7 +2322,7 @@ function ActivityCard({
                   </div>
                 ) : null}
                 {entry.warning ? (
-                  <div className="mt-2 min-w-0 rounded-md border border-amber-500/25 bg-amber-500/5 p-3 text-sm text-amber-700">
+                  <div className="mt-2 min-w-0 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-sm text-amber-700">
                     <p className="font-black">Instagram reported a mixed result.</p>
                     <p className="mt-1 break-words font-medium">
                       {entry.warning}
@@ -2318,7 +2330,7 @@ function ActivityCard({
                   </div>
                 ) : null}
                 {entry.error ? (
-                  <div className="mt-2 min-w-0 rounded-md border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">
+                  <div className="mt-2 min-w-0 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">
                     <p className="font-black">Instagram rejected this DM.</p>
                     <p className="mt-1 break-words font-medium">
                       {readableInstagramError(entry.error)}
@@ -2383,7 +2395,7 @@ function SettingsView({
           </Badge>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <div className="min-w-0 rounded-md border border-border bg-background p-4">
+          <div className="min-w-0 rounded-lg border border-border bg-background p-4">
             <p className="text-xs font-black uppercase tracking-[0.16em] text-primary">
               Instagram account
             </p>
@@ -2477,7 +2489,7 @@ function SettingsView({
               ))}
             </div>
           ) : (
-            <p className="rounded-md border border-dashed border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+            <p className="rounded-lg border border-dashed border-border bg-muted/30 p-4 text-sm text-muted-foreground">
               Permissions will appear here after Instagram is connected.
             </p>
           )}
@@ -2550,7 +2562,7 @@ function UsageTile({
   used: number;
 }) {
   return (
-    <div className="min-w-0 rounded-md border border-border bg-background p-4">
+    <div className="min-w-0 rounded-lg border border-border bg-background p-4">
       <p className="text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
         {label}
       </p>
@@ -2594,7 +2606,7 @@ function AutomationDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto rounded-md">
+      <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto rounded-lg">
         <DialogHeader>
           <DialogDescription className="font-bold uppercase tracking-[0.16em] text-primary">
             Automation setup
@@ -2659,7 +2671,7 @@ function EmptyState({
   title: string;
 }) {
   return (
-    <div className="grid place-items-center rounded-md border border-dashed border-border bg-muted/30 p-6 text-center">
+    <div className="grid place-items-center rounded-lg border border-dashed border-border bg-muted/30 p-6 text-center">
       <span className="grid size-11 place-items-center rounded-full bg-primary/10 text-primary">
         <Icon className="size-5" />
       </span>

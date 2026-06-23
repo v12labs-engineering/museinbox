@@ -32,7 +32,7 @@
 }
 
 :root {
-  --radius: 0.5rem;
+  --radius: 0.625rem;
   --background: #fafaf7;
   --foreground: #18181b;
   --card: #ffffff;

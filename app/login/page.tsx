@@ -77,7 +77,7 @@ export default function LoginPage() {
 
         <Card className="overflow-hidden border-border/80 bg-card/80">
           <CardContent className="grid min-h-[560px] place-items-center p-6 sm:p-9">
-            <div className="w-full max-w-[390px] rounded-md border border-border bg-background p-4">
+            <div className="w-full max-w-[390px] rounded-lg border border-border bg-background p-4">
               <div className="mb-4 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="grid size-9 place-items-center rounded-full bg-primary/10 text-primary">
@@ -93,8 +93,8 @@ export default function LoginPage() {
                 <Badge variant="secondary">Live</Badge>
               </div>
 
-              <div className="aspect-square rounded-md bg-[linear-gradient(145deg,#e8f3f1,#0f766e)] p-4">
-                <div className="flex h-full flex-col justify-end rounded-sm bg-slate-950/10 p-4 text-white">
+              <div className="aspect-square rounded-lg bg-[linear-gradient(145deg,#e8f3f1,#0f766e)] p-4">
+                <div className="flex h-full flex-col justify-end rounded-md bg-slate-950/10 p-4 text-white">
                   <p className="max-w-[230px] text-2xl font-black leading-tight">
                     Comment “LINK” and get the guide in DM
                   </p>
@@ -102,11 +102,11 @@ export default function LoginPage() {
               </div>
 
               <div className="mt-4 space-y-3">
-                <div className="ml-8 flex items-center gap-3 rounded-md border border-border bg-card p-3">
+                <div className="ml-8 flex items-center gap-3 rounded-lg border border-border bg-card p-3">
                   <MessageCircle className="size-4 text-primary" />
                   <span className="text-sm font-bold">link please</span>
                 </div>
-                <div className="muse-alert-success rounded-md border p-3">
+                <div className="muse-alert-success rounded-lg border p-3">
                   <div className="flex items-center gap-3">
                     <CheckCircle2 className="muse-text-success size-5" />
                     <div>
