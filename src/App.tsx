@@ -5,26 +5,32 @@ import Link from "next/link";
 import {
   AlertTriangle,
   BarChart3,
+  Bookmark,
+  Camera,
   CheckCircle2,
   Eye,
   ExternalLink,
   GalleryHorizontalEnd,
+  Heart,
   Image,
   LayoutDashboard,
   Menu,
   MessageCircle,
   MessageSquareReply,
+  MoreHorizontal,
   PauseCircle,
+  Phone,
   PlayCircle,
   Plus,
   RefreshCw,
   Save,
-  Search,
   Send,
   Settings,
+  Smile,
   Sparkles,
   Trash2,
   Unplug,
+  Video,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -61,7 +67,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
   cleanDraftRule,
-  composeCommentReply,
   composeDm,
   emptyDraft,
   findMatchingRule,
@@ -206,10 +211,14 @@ function formatTime(value: string) {
   }).format(new Date(value));
 }
 
+function composeDraftDm(rule: DraftRule) {
+  return [rule.message.trim(), rule.link.trim()].filter(Boolean).join("\n\n");
+}
+
 export function MuseInboxLogo() {
   return (
     <span
-      className="instagram-gradient grid size-11 shrink-0 place-items-center rounded-[14px] shadow-[0_14px_30px_rgb(24_24_27/0.14)]"
+      className="instagram-gradient grid size-11 shrink-0 place-items-center rounded-md"
       aria-hidden="true"
     >
       <svg className="size-11" viewBox="0 0 48 48" role="img">
@@ -301,8 +310,6 @@ function App({ currentView }: AppProps) {
     () => findMatchingRule(sampleComment, rules, selectedMedia?.id),
     [sampleComment, rules, selectedMedia],
   );
-  const matchedDm = matchedRule ? composeDm(matchedRule) : "";
-  const matchedCommentReply = matchedRule ? composeCommentReply(matchedRule) : "";
 
   useEffect(() => {
     void loadDashboard();
@@ -366,7 +373,7 @@ function App({ currentView }: AppProps) {
   function selectRule(rule: Rule) {
     setSelectedRuleId(rule.id);
     setDraft(ruleToDraft(rule));
-    setAutomationModalOpen(true);
+    setAutomationModalOpen(currentView !== "automations");
   }
 
   function createRule() {
@@ -379,12 +386,12 @@ function App({ currentView }: AppProps) {
         mediaType: selectedMedia.mediaType,
         postLabel: mediaLabel(selectedMedia),
       });
-      setAutomationModalOpen(true);
+      setAutomationModalOpen(currentView !== "automations");
       return;
     }
 
     setDraft(emptyDraft);
-    setAutomationModalOpen(true);
+    setAutomationModalOpen(currentView !== "automations");
   }
 
   async function saveRule(event: FormEvent<HTMLFormElement>) {
@@ -412,7 +419,9 @@ function App({ currentView }: AppProps) {
       });
       setSelectedRuleId(savedRule.id);
       setDraft(cleanedDraft);
-      setAutomationModalOpen(false);
+      if (automationModalOpen) {
+        setAutomationModalOpen(false);
+      }
       setError("");
     } catch (saveError) {
       setError(messageFromError(saveError));
@@ -430,7 +439,9 @@ function App({ currentView }: AppProps) {
         setSelectedRuleId(nextRule?.id ?? null);
         setDraft(nextRule ? ruleToDraft(nextRule) : emptyDraft);
       }
-      setAutomationModalOpen(false);
+      if (automationModalOpen) {
+        setAutomationModalOpen(false);
+      }
       setError("");
     } catch (deleteError) {
       setError(messageFromError(deleteError));
@@ -762,7 +773,7 @@ function App({ currentView }: AppProps) {
                   "grid min-w-0 gap-4",
                   currentView === "dashboard"
                     ? "xl:grid-cols-[minmax(280px,0.82fr)_minmax(0,1.45fr)]"
-                    : "2xl:grid-cols-[minmax(0,1fr)_minmax(380px,440px)]",
+                    : "2xl:grid-cols-[minmax(360px,0.85fr)_minmax(740px,1.15fr)]",
                 )}
               >
                 {currentView === "dashboard" ? (
@@ -801,14 +812,21 @@ function App({ currentView }: AppProps) {
                 </div>
 
                 {currentView === "automations" ? (
-                  <PreviewAndActivity
+                  <AutomationWorkspace
                     activity={activity}
-                    matchedCommentReply={matchedCommentReply}
-                    matchedDm={matchedDm}
+                    draft={draft}
+                    formInvalid={formInvalid}
+                    isEditingRule={isEditingRule}
+                    media={media}
                     matchedRule={matchedRule}
                     sampleComment={sampleComment}
+                    selectedRule={selectedRule}
+                    onDeleteRule={deleteRule}
                     onSampleChange={setSampleComment}
+                    onSaveRule={saveRule}
+                    onSelectMediaTarget={selectMediaTarget}
                     onTestComment={testComment}
+                    onUpdateDraft={setDraft}
                   />
                 ) : null}
               </section>
@@ -879,7 +897,7 @@ function DesktopSidebar({
           />
         ))}
       </nav>
-      <Card className="self-end overflow-hidden border-border/80 bg-card/82 shadow-sm">
+      <Card className="self-end overflow-hidden border-border/80 bg-card/82">
         <CardContent className="grid gap-3 p-3">
           <div className="flex items-center gap-3">
             <span
@@ -955,7 +973,7 @@ function MobileMenu({
             />
           ))}
         </nav>
-        <div className="mt-6 rounded-xl border border-border bg-card p-3">
+        <div className="mt-6 rounded-md border border-border bg-card p-3">
           <p className="text-sm font-bold">
             {connected ? "Connected" : "Not connected"}
           </p>
@@ -993,7 +1011,7 @@ function MobileBottomNav({ currentView }: { currentView: AppView }) {
         return (
           <Link
             className={cn(
-              "flex min-w-0 flex-col items-center gap-1 rounded-lg px-1 py-1.5 text-[0.68rem] font-bold text-muted-foreground",
+              "flex min-w-0 flex-col items-center gap-1 rounded-md px-1 py-1.5 text-[0.68rem] font-bold text-muted-foreground",
               active && "bg-primary/10 text-primary",
             )}
             href={item.href}
@@ -1011,7 +1029,7 @@ function MobileBottomNav({ currentView }: { currentView: AppView }) {
 function BrandLockup({ subtitle }: { subtitle: string }) {
   return (
     <Link
-      className="flex min-w-0 items-center gap-3 rounded-xl text-foreground"
+      className="flex min-w-0 items-center gap-3 rounded-md text-foreground"
       href="/dashboard"
       aria-label="MuseInbox home"
     >
@@ -1042,8 +1060,8 @@ function NavLink({
   return (
     <Link
       className={cn(
-        "flex min-w-0 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold text-muted-foreground transition hover:bg-accent hover:text-accent-foreground",
-        active && "bg-primary/10 text-primary shadow-sm",
+        "flex min-w-0 items-center gap-3 rounded-md px-3 py-2.5 text-sm font-bold text-muted-foreground transition hover:bg-accent hover:text-accent-foreground",
+        active && "bg-primary/10 text-primary",
       )}
       href={href}
     >
@@ -1067,7 +1085,7 @@ function ContentBrowser({
   selectedMedia: InstagramMediaItem | null;
 }) {
   return (
-    <Card className="min-w-0 border-border/80 bg-card/92 shadow-sm">
+    <Card className="min-w-0 border-border/80 bg-card/92">
       <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
         <div className="min-w-0">
           <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
@@ -1085,10 +1103,10 @@ function ContentBrowser({
           {loading ? (
             Array.from({ length: 4 }).map((_, index) => (
               <div
-                className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-xl border border-border p-2"
+                className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-md border border-border p-2"
                 key={index}
               >
-                <Skeleton className="size-[72px] rounded-lg" />
+                <Skeleton className="size-[72px] rounded-md" />
                 <div className="space-y-2 py-1">
                   <Skeleton className="h-4 w-16" />
                   <Skeleton className="h-4 w-full" />
@@ -1106,9 +1124,9 @@ function ContentBrowser({
             media.map((item) => (
               <button
                 className={cn(
-                  "grid min-w-0 grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-xl border border-border bg-background p-2 text-left transition hover:border-primary/40 hover:bg-primary/5",
+                  "grid min-w-0 grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-md border border-border bg-background p-2 text-left transition hover:border-primary/40 hover:bg-primary/5",
                   selectedMedia?.id === item.id &&
-                    "border-primary/50 bg-primary/10 shadow-sm",
+                    "border-primary/50 bg-primary/10",
                 )}
                 key={item.id}
                 type="button"
@@ -1151,7 +1169,7 @@ function SelectedMediaCard({
   selectedMedia: InstagramMediaItem | null;
 }) {
   return (
-    <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92 shadow-sm">
+    <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92">
       <CardContent className="p-4">
         {selectedMedia ? (
           <div className="grid gap-4 md:grid-cols-[112px_minmax(0,1fr)] md:items-center">
@@ -1229,7 +1247,7 @@ function CommentReadout({
 }) {
   if (loading) {
     return (
-      <div className="grid gap-2 rounded-xl border border-border bg-muted/35 p-3">
+      <div className="grid gap-2 rounded-md border border-border bg-muted/35 p-3">
         <Skeleton className="h-4 w-40" />
         <Skeleton className="h-14 w-full" />
       </div>
@@ -1238,7 +1256,7 @@ function CommentReadout({
 
   if (!comments) {
     return (
-      <div className="rounded-xl border border-dashed border-border bg-muted/25 p-3 text-sm font-medium text-muted-foreground">
+      <div className="rounded-md border border-dashed border-border bg-muted/25 p-3 text-sm font-medium text-muted-foreground">
         Read comments first to confirm Instagram can see the exact test comment before sending any DM.
       </div>
     );
@@ -1246,14 +1264,14 @@ function CommentReadout({
 
   if (comments.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-muted/35 p-3 text-sm font-semibold text-muted-foreground">
+      <div className="rounded-md border border-border bg-muted/35 p-3 text-sm font-semibold text-muted-foreground">
         Instagram returned no comments for this post/reel.
       </div>
     );
   }
 
   return (
-    <div className="min-w-0 rounded-xl border border-border bg-background">
+    <div className="min-w-0 rounded-md border border-border bg-background">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
         <div>
           <p className="text-sm font-black">Comments visible to MuseInbox</p>
@@ -1273,7 +1291,7 @@ function CommentReadout({
       <div className="grid max-h-80 min-w-0 gap-2 overflow-auto p-3">
         {comments.map((comment) => (
           <article
-            className="min-w-0 rounded-lg border border-border bg-muted/25 p-3"
+            className="min-w-0 rounded-md border border-border bg-muted/25 p-3"
             key={comment.id}
           >
             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1326,7 +1344,7 @@ function AutomationPanel({
   const tableMode = currentView === "automations";
 
   return (
-    <Card className="min-w-0 border-border/80 bg-card/92 shadow-sm">
+    <Card className="min-w-0 border-border/80 bg-card/92">
       <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
         <div className="min-w-0">
           <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
@@ -1375,7 +1393,7 @@ function AutomationPanel({
                 visibleRules.map((rule) => (
                   <div
                     className={cn(
-                      "grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-xl border border-border bg-background p-3",
+                      "grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-md border border-border bg-background p-3",
                       selectedRuleId === rule.id &&
                         "border-primary/50 bg-primary/10",
                     )}
@@ -1444,7 +1462,7 @@ function AutomationCards({
     <div className="grid gap-3 lg:grid-cols-2">
       {rules.map((rule) => (
         <article
-          className="grid min-w-0 gap-4 rounded-2xl border border-border bg-background p-4 shadow-sm transition hover:border-primary/35 hover:shadow-md"
+          className="grid min-w-0 gap-4 rounded-md border border-border bg-background p-4 transition hover:border-primary/35"
           key={rule.id}
         >
           <div className="flex min-w-0 items-start justify-between gap-3">
@@ -1462,7 +1480,7 @@ function AutomationCards({
             <RuleStatusBadge active={rule.active} />
           </div>
 
-          <div className="grid gap-3 rounded-xl border border-border bg-muted/30 p-3 text-sm">
+          <div className="grid gap-3 rounded-md border border-border bg-muted/30 p-3 text-sm">
             <div className="min-w-0">
               <span className="block text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
                 Post/Reel
@@ -1538,87 +1556,616 @@ function AutomationCards({
   );
 }
 
-function PreviewAndActivity({
+type PreviewMode = "post" | "comments" | "dm";
+
+function AutomationWorkspace({
   activity,
-  matchedCommentReply,
-  matchedDm,
+  draft,
+  formInvalid,
+  isEditingRule,
+  media,
   matchedRule,
+  onDeleteRule,
   onSampleChange,
+  onSaveRule,
+  onSelectMediaTarget,
   onTestComment,
+  onUpdateDraft,
   sampleComment,
+  selectedRule,
 }: {
   activity: Activity[];
-  matchedCommentReply: string;
-  matchedDm: string;
+  draft: DraftRule;
+  formInvalid: boolean;
+  isEditingRule: boolean;
+  media: InstagramMediaItem[];
   matchedRule: Rule | null;
+  onDeleteRule: (ruleId: string) => void;
   onSampleChange: (value: string) => void;
+  onSaveRule: (event: FormEvent<HTMLFormElement>) => void;
+  onSelectMediaTarget: (mediaId: string) => void;
   onTestComment: () => void;
+  onUpdateDraft: React.Dispatch<React.SetStateAction<DraftRule>>;
   sampleComment: string;
+  selectedRule: Rule | null;
 }) {
+  const selectedMedia =
+    media.find((item) => item.id === draft.mediaId) ?? null;
+
   return (
     <aside className="grid min-w-0 max-w-full content-start gap-4 overflow-hidden">
-      <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92 shadow-sm">
+      <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92">
         <CardHeader>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
-                Preview
-              </CardDescription>
-              <CardTitle>Test comment</CardTitle>
-            </div>
-            <Search className="size-5 text-muted-foreground" />
+          <div className="min-w-0">
+            <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
+              Automation setup
+            </CardDescription>
+            <CardTitle>
+              {isEditingRule ? "Edit automation" : "New automation"}
+            </CardTitle>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="sample-comment">Sample comment</Label>
-            <Textarea
-              id="sample-comment"
-              value={sampleComment}
-              onChange={(event) => onSampleChange(event.target.value)}
-              rows={3}
+        <CardContent>
+          <div className="grid gap-5 min-[1380px]:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] min-[1380px]:items-start">
+            <AutomationForm
+              draft={draft}
+              formInvalid={formInvalid}
+              media={media}
+              selectedRule={selectedRule}
+              submitLabel="Save automation"
+              onDeleteRule={onDeleteRule}
+              onSaveRule={onSaveRule}
+              onSelectMediaTarget={onSelectMediaTarget}
+              onUpdateDraft={onUpdateDraft}
             />
+            <div className="grid gap-3">
+              <PhoneAutomationPreview
+                draft={draft}
+                matchedRule={matchedRule}
+                sampleComment={sampleComment}
+                selectedMedia={selectedMedia}
+              />
+              <div className="grid gap-2 rounded-md border border-border bg-muted/30 p-3">
+                <Label htmlFor="sample-comment">Sample comment</Label>
+                <Textarea
+                  id="sample-comment"
+                  value={sampleComment}
+                  onChange={(event) => onSampleChange(event.target.value)}
+                  rows={3}
+                />
+                <Button
+                  className="w-full"
+                  type="button"
+                  variant="outline"
+                  onClick={onTestComment}
+                >
+                  <Send className="size-4" />
+                  Add preview to log
+                </Button>
+              </div>
+            </div>
           </div>
-          <div className="min-h-36 rounded-xl border border-border bg-muted/45 p-4">
-            {matchedRule ? (
-              <>
-                <Badge className="muse-badge-success mb-2">
-                  Matched
-                </Badge>
-                <h3 className="font-black">{matchedRule.name}</h3>
-                <div className="mt-3 flex min-w-0 gap-2 rounded-xl bg-background p-3 text-sm text-foreground shadow-sm">
-                  <MessageCircle className="mt-0.5 size-4 shrink-0 text-primary" />
-                  <p className="min-w-0 whitespace-pre-wrap break-words">
-                    {matchedDm}
-                  </p>
-                </div>
-                {matchedCommentReply ? (
-                  <div className="mt-2 flex min-w-0 gap-2 rounded-xl bg-background p-3 text-sm text-foreground shadow-sm">
-                    <MessageSquareReply className="mt-0.5 size-4 shrink-0 text-primary" />
-                    <p className="min-w-0 whitespace-pre-wrap break-words">
-                      {matchedCommentReply}
-                    </p>
-                  </div>
-                ) : null}
-              </>
-            ) : (
-              <>
-                <Badge variant="secondary">No match</Badge>
-                <h3 className="mt-2 font-black">No DM would be sent</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Add a keyword rule or activate an “any word” rule.
-                </p>
-              </>
-            )}
-          </div>
-          <Button className="w-full" type="button" variant="outline" onClick={onTestComment}>
-            <Send className="size-4" />
-            Add to log
-          </Button>
         </CardContent>
       </Card>
       <ActivityCard activity={activity} compact />
     </aside>
+  );
+}
+
+function AutomationForm({
+  draft,
+  formInvalid,
+  media,
+  onDeleteRule,
+  onSaveRule,
+  onSelectMediaTarget,
+  onUpdateDraft,
+  selectedRule,
+  submitLabel,
+  onCancel,
+}: {
+  draft: DraftRule;
+  formInvalid: boolean;
+  media: InstagramMediaItem[];
+  onDeleteRule: (ruleId: string) => void;
+  onSaveRule: (event: FormEvent<HTMLFormElement>) => void;
+  onSelectMediaTarget: (mediaId: string) => void;
+  onUpdateDraft: React.Dispatch<React.SetStateAction<DraftRule>>;
+  selectedRule: Rule | null;
+  submitLabel: string;
+  onCancel?: () => void;
+}) {
+  return (
+    <form className="grid min-w-0 gap-4" onSubmit={onSaveRule}>
+      <div className="grid gap-2">
+        <Label htmlFor="rule-name">Name</Label>
+        <Input
+          id="rule-name"
+          value={draft.name}
+          onChange={(event) =>
+            onUpdateDraft((currentDraft) => ({
+              ...currentDraft,
+              name: event.target.value,
+            }))
+          }
+          placeholder="Send product link"
+        />
+      </div>
+
+      <div className="grid gap-2">
+        <Label>Trigger</Label>
+        <Tabs
+          value={draft.triggerType}
+          onValueChange={(value) =>
+            onUpdateDraft((currentDraft) => ({
+              ...currentDraft,
+              triggerType: value as "keyword" | "any",
+            }))
+          }
+        >
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="keyword">Keyword</TabsTrigger>
+            <TabsTrigger value="any">Any word</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {draft.triggerType === "keyword" ? (
+        <div className="grid gap-2">
+          <Label htmlFor="rule-keyword">Keyword</Label>
+          <Input
+            id="rule-keyword"
+            value={draft.keyword}
+            onChange={(event) =>
+              onUpdateDraft((currentDraft) => ({
+                ...currentDraft,
+                keyword: event.target.value,
+              }))
+            }
+            placeholder="LINK"
+          />
+        </div>
+      ) : (
+        <Alert className="muse-alert-success">
+          <CheckCircle2 className="muse-text-success size-4" />
+          <AlertDescription>
+            Matches any comment when no keyword rule matches first.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <div className="grid gap-2">
+        <Label htmlFor="rule-media">Post or reel</Label>
+        <select
+          id="rule-media"
+          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          value={draft.mediaId ?? ""}
+          onChange={(event) => onSelectMediaTarget(event.target.value)}
+        >
+          <option value="">All posts and reels</option>
+          {media.map((item) => (
+            <option key={item.id} value={item.id}>
+              {mediaLabel(item)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="grid gap-2">
+        <Label htmlFor="rule-message">DM message</Label>
+        <Textarea
+          id="rule-message"
+          value={draft.message}
+          onChange={(event) =>
+            onUpdateDraft((currentDraft) => ({
+              ...currentDraft,
+              message: event.target.value,
+            }))
+          }
+          placeholder="Thanks for commenting. Here are the details:"
+          rows={5}
+        />
+      </div>
+
+      <div className="grid gap-2">
+        <Label htmlFor="rule-link">Link</Label>
+        <Input
+          id="rule-link"
+          value={draft.link}
+          onChange={(event) =>
+            onUpdateDraft((currentDraft) => ({
+              ...currentDraft,
+              link: event.target.value,
+            }))
+          }
+          placeholder="https://..."
+        />
+      </div>
+
+      <div className="grid gap-2">
+        <Label htmlFor="rule-comment-reply">Public comment reply</Label>
+        <Textarea
+          id="rule-comment-reply"
+          value={draft.commentReply ?? ""}
+          onChange={(event) =>
+            onUpdateDraft((currentDraft) => ({
+              ...currentDraft,
+              commentReply: event.target.value,
+            }))
+          }
+          placeholder="Sent you the details in DM."
+          rows={3}
+        />
+        <p className="text-xs font-medium text-muted-foreground">
+          Optional. If filled, MuseInbox replies under the matching Instagram comment.
+        </p>
+      </div>
+
+      <div className="flex items-center justify-between rounded-md border border-border bg-muted/35 p-3">
+        <div>
+          <Label htmlFor="rule-active">Active</Label>
+          <p className="text-sm text-muted-foreground">
+            Turn this on when the rule is ready to match comments.
+          </p>
+        </div>
+        <Switch
+          id="rule-active"
+          checked={draft.active}
+          onCheckedChange={(checked) =>
+            onUpdateDraft((currentDraft) => ({
+              ...currentDraft,
+              active: checked,
+            }))
+          }
+        />
+      </div>
+
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+        {selectedRule ? (
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={() => onDeleteRule(selectedRule.id)}
+          >
+            <Trash2 className="size-4" />
+            Delete
+          </Button>
+        ) : (
+          <span />
+        )}
+        <div className="flex flex-col-reverse gap-2 sm:flex-row">
+          {onCancel ? (
+            <Button type="button" variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+          ) : null}
+          <Button disabled={formInvalid}>
+            <Save className="size-4" />
+            {submitLabel}
+          </Button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
+function PhoneAutomationPreview({
+  draft,
+  matchedRule,
+  sampleComment,
+  selectedMedia,
+}: {
+  draft: DraftRule;
+  matchedRule: Rule | null;
+  sampleComment: string;
+  selectedMedia: InstagramMediaItem | null;
+}) {
+  const [mode, setMode] = useState<PreviewMode>("post");
+  const accountName = "momlife.with.pranu";
+  const dmText = composeDraftDm(draft) || "Your DM message will appear here.";
+  const commentReply = draft.commentReply?.trim() || "Sent you the details in DM.";
+  const postTitle = selectedMedia ? mediaTitle(selectedMedia) : "Selected post preview";
+  const isMatched =
+    draft.triggerType === "any" ||
+    (draft.keyword.trim() &&
+      sampleComment.toLowerCase().includes(draft.keyword.trim().toLowerCase()));
+
+  return (
+    <div className="grid justify-items-center gap-3">
+      <div className="w-full max-w-[340px] rounded-md border border-border bg-muted/25 p-3">
+        <div className="mx-auto h-[620px] w-[282px] overflow-hidden rounded-[2.35rem] border-[10px] border-[#111827] bg-[#101010] shadow-2xl">
+          <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-[1.65rem] bg-[#0f0f0f] text-[#f7f7f2]">
+            <PhoneStatusBar />
+            {mode === "post" ? (
+              <PostPreview
+                accountName={accountName}
+                draft={draft}
+                postTitle={postTitle}
+                selectedMedia={selectedMedia}
+              />
+            ) : mode === "comments" ? (
+              <CommentsPreview
+                accountName={accountName}
+                commentReply={commentReply}
+                isMatched={Boolean(isMatched)}
+                sampleComment={sampleComment}
+                selectedMedia={selectedMedia}
+              />
+            ) : (
+              <DmPreview
+                accountName={accountName}
+                dmText={dmText}
+                matchedRule={matchedRule}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+      <Tabs value={mode} onValueChange={(value) => setMode(value as PreviewMode)}>
+        <TabsList className="grid w-[300px] grid-cols-3 rounded-full">
+          <TabsTrigger className="rounded-full" value="post">
+            Post
+          </TabsTrigger>
+          <TabsTrigger className="rounded-full" value="comments">
+            Comments
+          </TabsTrigger>
+          <TabsTrigger className="rounded-full" value="dm">
+            DM
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+    </div>
+  );
+}
+
+function PhoneStatusBar() {
+  return (
+    <div className="flex h-10 items-center justify-between bg-[#141414] px-10 text-xs font-black">
+      <span>5:11</span>
+      <span className="h-2 w-12 rounded-full bg-[#2d2d2d]" />
+      <span className="flex items-center gap-1">
+        <span className="h-2 w-3 rounded-sm bg-[#f7f7f2]" />
+        <span className="h-2 w-4 rounded-sm border border-[#f7f7f2]" />
+      </span>
+    </div>
+  );
+}
+
+function PostPreview({
+  accountName,
+  draft,
+  postTitle,
+  selectedMedia,
+}: {
+  accountName: string;
+  draft: DraftRule;
+  postTitle: string;
+  selectedMedia: InstagramMediaItem | null;
+}) {
+  return (
+    <div className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)]">
+      <div className="border-b border-[#1f1f1f] px-4 pb-3 text-center">
+        <p className="text-[0.68rem] font-black uppercase text-[#777]">
+          {accountName}
+        </p>
+        <p className="text-sm font-black">Posts</p>
+      </div>
+      <InstagramPostHeader accountName={accountName} selectedMedia={selectedMedia} />
+      <div className="min-h-0 overflow-hidden">
+        <div className="aspect-square bg-[#1d1d1d]">
+          <PhoneMediaImage selectedMedia={selectedMedia} />
+        </div>
+        <div className="space-y-2 px-3 py-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <Heart className="size-5" />
+              <MessageCircle className="size-5" />
+              <Send className="size-5" />
+            </span>
+            <Bookmark className="size-5" />
+          </div>
+          <p className="font-bold">
+            <span>{accountName}</span>{" "}
+            <span className="font-medium text-[#ededed]">
+              {postTitle}
+            </span>
+          </p>
+          <p className="line-clamp-4 text-[#d1d1d1]">
+            {draft.message || "This is where the selected post caption appears."}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CommentsPreview({
+  accountName,
+  commentReply,
+  isMatched,
+  sampleComment,
+  selectedMedia,
+}: {
+  accountName: string;
+  commentReply: string;
+  isMatched: boolean;
+  sampleComment: string;
+  selectedMedia: InstagramMediaItem | null;
+}) {
+  return (
+    <div className="relative min-h-0 overflow-hidden">
+      <PostPreview
+        accountName={accountName}
+        draft={{
+          ...emptyDraft,
+          message: "Post content remains behind the comments drawer.",
+        }}
+        postTitle="Post preview"
+        selectedMedia={selectedMedia}
+      />
+      <div className="absolute inset-x-0 bottom-0 h-[410px] rounded-t-[1.8rem] border-t border-[#383838] bg-[#252525] shadow-[0_-12px_30px_rgb(0_0_0/0.45)]">
+        <div className="mx-auto mt-3 h-1 w-7 rounded-full bg-[#bfbfbf]" />
+        <div className="mt-3 flex items-center justify-between border-b border-[#363636] px-5 pb-3">
+          <span className="w-5" />
+          <p className="text-sm font-black">Comments</p>
+          <Send className="size-5" />
+        </div>
+        <div className="grid gap-3 px-4 py-4 text-sm">
+          <div className="grid grid-cols-[32px_minmax(0,1fr)_20px] gap-3">
+            <AvatarDot />
+            <div className="min-w-0">
+              <p className="break-words">
+                <span className="font-bold">Username</span>{" "}
+                <span className="text-[#888]">Now</span>
+                <br />
+                {sampleComment || "Leaves any comment"}
+              </p>
+              <p className="mt-1 text-xs font-bold text-[#858585]">Reply</p>
+              {isMatched ? (
+                <p className="mt-2 rounded-xl bg-[#343434] px-3 py-2 text-xs text-[#f1f1f1]">
+                  {commentReply}
+                </p>
+              ) : null}
+            </div>
+            <Heart className="mt-2 size-4 text-[#a5a5a5]" />
+          </div>
+        </div>
+        <div className="absolute inset-x-4 bottom-4 grid grid-cols-[32px_minmax(0,1fr)] items-center gap-2">
+          <AvatarDot />
+          <div className="rounded-full border border-[#444] px-4 py-2 text-xs font-semibold text-[#888]">
+            Add a comment for username...
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DmPreview({
+  accountName,
+  dmText,
+  matchedRule,
+}: {
+  accountName: string;
+  dmText: string;
+  matchedRule: Rule | null;
+}) {
+  return (
+    <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]">
+      <div className="flex items-center justify-between border-b border-[#2a2a2a] px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="text-2xl leading-none">‹</span>
+          <AvatarDot />
+          <p className="truncate text-sm font-black">{accountName}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Phone className="size-5" />
+          <Video className="size-5" />
+        </div>
+      </div>
+      <div className="min-h-0 px-4 py-5">
+        <div className="grid grid-cols-[32px_minmax(0,1fr)] items-end gap-3">
+          <AvatarDot />
+          <div className="rounded-2xl bg-[#2d2d2d] px-4 py-3 text-sm">
+            <p className="whitespace-pre-wrap break-words">{dmText}</p>
+            <button
+              className="mt-3 w-full rounded-lg bg-[#3c3c3c] px-3 py-2 font-bold"
+              type="button"
+            >
+              Click
+            </button>
+          </div>
+        </div>
+        {matchedRule ? (
+          <p className="mt-4 text-center text-xs font-semibold text-[#888]">
+            Matched by {matchedRule.name}
+          </p>
+        ) : null}
+      </div>
+      <div className="grid grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-2 px-4 pb-4">
+        <span className="grid size-8 place-items-center rounded-full bg-[#0a84ff]">
+          <Camera className="size-4" />
+        </span>
+        <div className="rounded-full bg-[#191919] px-3 py-2 text-sm font-semibold text-[#777]">
+          Message...
+        </div>
+        <div className="flex items-center gap-2">
+          <Image className="size-5" />
+          <Smile className="size-5" />
+          <Plus className="size-5" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InstagramPostHeader({
+  accountName,
+  selectedMedia,
+}: {
+  accountName: string;
+  selectedMedia: InstagramMediaItem | null;
+}) {
+  return (
+    <div className="flex items-center justify-between border-b border-[#1f1f1f] px-3 py-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <PhoneMediaAvatar selectedMedia={selectedMedia} />
+        <p className="truncate text-sm font-bold">{accountName}</p>
+      </div>
+      <MoreHorizontal className="size-5" />
+    </div>
+  );
+}
+
+function PhoneMediaImage({
+  selectedMedia,
+}: {
+  selectedMedia: InstagramMediaItem | null;
+}) {
+  const imageUrl = selectedMedia?.mediaUrl || selectedMedia?.thumbnailUrl;
+
+  if (imageUrl) {
+    return (
+      <img
+        alt=""
+        className="h-full w-full object-cover"
+        src={imageUrl}
+      />
+    );
+  }
+
+  return (
+    <div className="grid h-full place-items-center bg-[#2b2b2b] text-center text-xs font-bold text-[#8f8f8f]">
+      <span className="px-6">Select a post to preview the media here.</span>
+    </div>
+  );
+}
+
+function PhoneMediaAvatar({
+  selectedMedia,
+}: {
+  selectedMedia: InstagramMediaItem | null;
+}) {
+  const imageUrl = selectedMedia?.thumbnailUrl || selectedMedia?.mediaUrl;
+
+  if (imageUrl) {
+    return (
+      <img
+        alt=""
+        className="size-8 rounded-full object-cover"
+        src={imageUrl}
+      />
+    );
+  }
+
+  return <AvatarDot />;
+}
+
+function AvatarDot() {
+  return (
+    <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[#f4f4f1] text-[#8a8a8a]">
+      <span className="size-4 rounded-full bg-[#d8d8d2]" />
+    </span>
   );
 }
 
@@ -1638,7 +2185,7 @@ function ActivityCard({
   compact?: boolean;
 }) {
   return (
-    <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92 shadow-sm">
+    <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92">
       <CardHeader>
         <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
           Activity
@@ -1656,7 +2203,7 @@ function ActivityCard({
           ) : (
             activity.map((entry) => (
               <article
-                className="min-w-0 rounded-xl border border-border bg-background p-4"
+                className="min-w-0 rounded-md border border-border bg-background p-4"
                 key={entry.id}
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1673,10 +2220,10 @@ function ActivityCard({
                     {entry.status.replace("_", " ")}
                   </Badge>
                 </div>
-                <p className="mt-3 rounded-lg bg-muted/55 p-3 text-sm font-semibold break-words">
+                <p className="mt-3 rounded-md bg-muted/55 p-3 text-sm font-semibold break-words">
                   “{entry.comment}”
                 </p>
-                <div className="mt-2 min-w-0 rounded-lg border border-border bg-background p-3">
+                <div className="mt-2 min-w-0 rounded-md border border-border bg-background p-3">
                   <p className="text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
                     DM attempted
                   </p>
@@ -1685,7 +2232,7 @@ function ActivityCard({
                   </p>
                 </div>
                 {entry.commentReply ? (
-                  <div className="mt-2 min-w-0 rounded-lg border border-border bg-background p-3">
+                  <div className="mt-2 min-w-0 rounded-md border border-border bg-background p-3">
                     <p className="text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
                       Comment reply
                     </p>
@@ -1695,7 +2242,7 @@ function ActivityCard({
                   </div>
                 ) : null}
                 {entry.diagnosticId || entry.deliveryAttempts?.length ? (
-                  <div className="mt-2 min-w-0 rounded-lg border border-border bg-muted/35 p-3 text-xs text-muted-foreground">
+                  <div className="mt-2 min-w-0 rounded-md border border-border bg-muted/35 p-3 text-xs text-muted-foreground">
                     {entry.diagnosticId ? (
                       <p className="font-black">
                         Debug ID:{" "}
@@ -1710,7 +2257,7 @@ function ActivityCard({
                   </div>
                 ) : null}
                 {entry.warning ? (
-                  <div className="mt-2 min-w-0 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-sm text-amber-700">
+                  <div className="mt-2 min-w-0 rounded-md border border-amber-500/25 bg-amber-500/5 p-3 text-sm text-amber-700">
                     <p className="font-black">Instagram reported a mixed result.</p>
                     <p className="mt-1 break-words font-medium">
                       {entry.warning}
@@ -1718,7 +2265,7 @@ function ActivityCard({
                   </div>
                 ) : null}
                 {entry.error ? (
-                  <div className="mt-2 min-w-0 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">
+                  <div className="mt-2 min-w-0 rounded-md border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">
                     <p className="font-black">Instagram rejected this DM.</p>
                     <p className="mt-1 break-words font-medium">
                       {readableInstagramError(entry.error)}
@@ -1760,7 +2307,7 @@ function SettingsView({
 
   return (
     <div className="grid min-w-0 max-w-5xl gap-4">
-      <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92 shadow-sm">
+      <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92">
         <CardHeader className="flex flex-col items-start gap-3 space-y-0 sm:flex-row sm:justify-between">
           <div className="min-w-0">
             <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
@@ -1783,7 +2330,7 @@ function SettingsView({
           </Badge>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <div className="min-w-0 rounded-xl border border-border bg-background p-4">
+          <div className="min-w-0 rounded-md border border-border bg-background p-4">
             <p className="text-xs font-black uppercase tracking-[0.16em] text-primary">
               Instagram account
             </p>
@@ -1823,7 +2370,7 @@ function SettingsView({
         </CardContent>
       </Card>
 
-      <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92 shadow-sm">
+      <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92">
         <CardHeader>
           <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
             Free forever
@@ -1860,7 +2407,7 @@ function SettingsView({
         </CardContent>
       </Card>
 
-      <Card className="border-border/80 bg-card/92 shadow-sm">
+      <Card className="border-border/80 bg-card/92">
         <CardHeader>
           <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
             Access
@@ -1877,14 +2424,14 @@ function SettingsView({
               ))}
             </div>
           ) : (
-            <p className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+            <p className="rounded-md border border-dashed border-border bg-muted/30 p-4 text-sm text-muted-foreground">
               Permissions will appear here after Instagram is connected.
             </p>
           )}
         </CardContent>
       </Card>
 
-      <Card className="border-destructive/25 bg-card/92 shadow-sm">
+      <Card className="border-destructive/25 bg-card/92">
         <CardHeader>
           <CardDescription className="font-bold uppercase tracking-[0.16em] text-destructive">
             Data
@@ -1950,7 +2497,7 @@ function UsageTile({
   used: number;
 }) {
   return (
-    <div className="min-w-0 rounded-xl border border-border bg-background p-4">
+    <div className="min-w-0 rounded-md border border-border bg-background p-4">
       <p className="text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
         {label}
       </p>
@@ -1994,7 +2541,7 @@ function AutomationDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto rounded-2xl">
+      <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto rounded-md">
         <DialogHeader>
           <DialogDescription className="font-bold uppercase tracking-[0.16em] text-primary">
             Automation setup
@@ -2004,178 +2551,18 @@ function AutomationDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <form className="grid gap-4" onSubmit={onSaveRule}>
-          <div className="grid gap-2">
-            <Label htmlFor="rule-name">Name</Label>
-            <Input
-              id="rule-name"
-              value={draft.name}
-              onChange={(event) =>
-                onUpdateDraft((currentDraft) => ({
-                  ...currentDraft,
-                  name: event.target.value,
-                }))
-              }
-              placeholder="Send product link"
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <Label>Trigger</Label>
-            <Tabs
-              value={draft.triggerType}
-              onValueChange={(value) =>
-                onUpdateDraft((currentDraft) => ({
-                  ...currentDraft,
-                  triggerType: value as "keyword" | "any",
-                }))
-              }
-            >
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="keyword">Keyword</TabsTrigger>
-                <TabsTrigger value="any">Any word</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-
-          {draft.triggerType === "keyword" ? (
-            <div className="grid gap-2">
-              <Label htmlFor="rule-keyword">Keyword</Label>
-              <Input
-                id="rule-keyword"
-                value={draft.keyword}
-                onChange={(event) =>
-                  onUpdateDraft((currentDraft) => ({
-                    ...currentDraft,
-                    keyword: event.target.value,
-                  }))
-                }
-                placeholder="LINK"
-              />
-            </div>
-          ) : (
-            <Alert className="muse-alert-success">
-              <CheckCircle2 className="muse-text-success size-4" />
-              <AlertDescription>
-                Matches any comment when no keyword rule matches first.
-              </AlertDescription>
-            </Alert>
-          )}
-
-          <div className="grid gap-2">
-            <Label htmlFor="rule-media">Post or reel</Label>
-            <select
-              id="rule-media"
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              value={draft.mediaId ?? ""}
-              onChange={(event) => onSelectMediaTarget(event.target.value)}
-            >
-              <option value="">All posts and reels</option>
-              {media.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {mediaLabel(item)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="rule-message">DM message</Label>
-            <Textarea
-              id="rule-message"
-              value={draft.message}
-              onChange={(event) =>
-                onUpdateDraft((currentDraft) => ({
-                  ...currentDraft,
-                  message: event.target.value,
-                }))
-              }
-              placeholder="Thanks for commenting. Here are the details:"
-              rows={5}
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="rule-link">Link</Label>
-            <Input
-              id="rule-link"
-              value={draft.link}
-              onChange={(event) =>
-                onUpdateDraft((currentDraft) => ({
-                  ...currentDraft,
-                  link: event.target.value,
-                }))
-              }
-              placeholder="https://..."
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="rule-comment-reply">Public comment reply</Label>
-            <Textarea
-              id="rule-comment-reply"
-              value={draft.commentReply ?? ""}
-              onChange={(event) =>
-                onUpdateDraft((currentDraft) => ({
-                  ...currentDraft,
-                  commentReply: event.target.value,
-                }))
-              }
-              placeholder="Sent you the details in DM."
-              rows={3}
-            />
-            <p className="text-xs font-medium text-muted-foreground">
-              Optional. If filled, MuseInbox replies under the matching Instagram comment.
-            </p>
-          </div>
-
-          <div className="flex items-center justify-between rounded-xl border border-border bg-muted/35 p-3">
-            <div>
-              <Label htmlFor="rule-active">Active</Label>
-              <p className="text-sm text-muted-foreground">
-                Turn this on when the rule is ready to match comments.
-              </p>
-            </div>
-            <Switch
-              id="rule-active"
-              checked={draft.active}
-              onCheckedChange={(checked) =>
-                onUpdateDraft((currentDraft) => ({
-                  ...currentDraft,
-                  active: checked,
-                }))
-              }
-            />
-          </div>
-
-          <DialogFooter className="gap-2 sm:justify-between sm:space-x-0">
-            {selectedRule ? (
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={() => onDeleteRule(selectedRule.id)}
-              >
-                <Trash2 className="size-4" />
-                Delete
-              </Button>
-            ) : (
-              <span />
-            )}
-            <div className="flex flex-col-reverse gap-2 sm:flex-row">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-              >
-                Cancel
-              </Button>
-              <Button disabled={formInvalid}>
-                <Save className="size-4" />
-                Save automation
-              </Button>
-            </div>
-          </DialogFooter>
-        </form>
+        <AutomationForm
+          draft={draft}
+          formInvalid={formInvalid}
+          media={media}
+          selectedRule={selectedRule}
+          submitLabel="Save automation"
+          onCancel={() => onOpenChange(false)}
+          onDeleteRule={onDeleteRule}
+          onSaveRule={onSaveRule}
+          onSelectMediaTarget={onSelectMediaTarget}
+          onUpdateDraft={onUpdateDraft}
+        />
       </DialogContent>
     </Dialog>
   );
@@ -2191,14 +2578,14 @@ function MediaThumb({
   return item.thumbnailUrl || item.mediaUrl ? (
     <img
       alt=""
-      className={cn("shrink-0 rounded-xl object-cover", className)}
+      className={cn("shrink-0 rounded-md object-cover", className)}
       src={item.thumbnailUrl ?? item.mediaUrl}
       loading="lazy"
     />
   ) : (
     <span
       className={cn(
-        "grid shrink-0 place-items-center rounded-xl bg-primary/10 text-primary",
+        "grid shrink-0 place-items-center rounded-md bg-primary/10 text-primary",
         className,
       )}
     >
@@ -2219,7 +2606,7 @@ function EmptyState({
   title: string;
 }) {
   return (
-    <div className="grid place-items-center rounded-xl border border-dashed border-border bg-muted/30 p-6 text-center">
+    <div className="grid place-items-center rounded-md border border-dashed border-border bg-muted/30 p-6 text-center">
       <span className="grid size-11 place-items-center rounded-full bg-primary/10 text-primary">
         <Icon className="size-5" />
       </span>
