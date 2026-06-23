@@ -98,7 +98,7 @@ export default function HomePage() {
           </p>
         </div>
 
-        <Card className="muse-panel-shadow border-border/80 bg-card/92">
+        <Card className="border-border/80 bg-card/92">
           <CardContent className="p-5 sm:p-7">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -109,7 +109,7 @@ export default function HomePage() {
                   Simple enough to run in minutes.
                 </h2>
               </div>
-              <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
+              <span className="grid size-12 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
                 <MessageCircle className="size-6" />
               </span>
             </div>
@@ -117,7 +117,7 @@ export default function HomePage() {
             <div className="mt-6 grid gap-3">
               {steps.map((step, index) => (
                 <div
-                  className="grid grid-cols-[2rem_minmax(0,1fr)] gap-3 rounded-xl border border-border bg-background p-4"
+                  className="grid grid-cols-[2rem_minmax(0,1fr)] gap-3 rounded-md border border-border bg-background p-4"
                   key={step.title}
                 >
                   <span className="grid size-8 place-items-center rounded-full bg-primary text-sm font-black text-primary-foreground">
@@ -138,7 +138,7 @@ export default function HomePage() {
             <div className="grid gap-2 sm:grid-cols-2">
               {trustItems.map((item) => (
                 <div
-                  className="flex min-w-0 items-center gap-2 rounded-xl border border-border bg-muted/25 px-3 py-2 text-sm font-bold"
+                  className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-muted/25 px-3 py-2 text-sm font-bold"
                   key={item}
                 >
                   {item === "Encrypted token storage" ? (

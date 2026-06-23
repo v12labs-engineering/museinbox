@@ -1873,8 +1873,8 @@ function PhoneAutomationPreview({
   return (
     <div className="grid justify-items-center gap-3">
       <div className="w-full max-w-[340px] rounded-md border border-border bg-muted/25 p-3">
-        <div className="mx-auto h-[620px] w-[282px] overflow-hidden rounded-[2.35rem] border-[10px] border-[#111827] bg-[#101010] shadow-2xl">
-          <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-[1.65rem] bg-[#0f0f0f] text-[#f7f7f2]">
+        <div className="mx-auto h-[620px] w-[282px] overflow-hidden rounded-md border-[10px] border-[#111827] bg-[#101010]">
+          <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-md bg-[#0f0f0f] text-[#f7f7f2]">
             <PhoneStatusBar />
             {mode === "post" ? (
               <PostPreview
@@ -2003,7 +2003,7 @@ function CommentsPreview({
         postTitle="Post preview"
         selectedMedia={selectedMedia}
       />
-      <div className="absolute inset-x-0 bottom-0 h-[410px] rounded-t-[1.8rem] border-t border-[#383838] bg-[#252525] shadow-[0_-12px_30px_rgb(0_0_0/0.45)]">
+      <div className="absolute inset-x-0 bottom-0 h-[410px] rounded-t-md border-t border-[#383838] bg-[#252525]">
         <div className="mx-auto mt-3 h-1 w-7 rounded-full bg-[#bfbfbf]" />
         <div className="mt-3 flex items-center justify-between border-b border-[#363636] px-5 pb-3">
           <span className="w-5" />
@@ -2022,7 +2022,7 @@ function CommentsPreview({
               </p>
               <p className="mt-1 text-xs font-bold text-[#858585]">Reply</p>
               {isMatched ? (
-                <p className="mt-2 rounded-xl bg-[#343434] px-3 py-2 text-xs text-[#f1f1f1]">
+                <p className="mt-2 rounded-md bg-[#343434] px-3 py-2 text-xs text-[#f1f1f1]">
                   {commentReply}
                 </p>
               ) : null}
@@ -2066,10 +2066,10 @@ function DmPreview({
       <div className="min-h-0 px-4 py-5">
         <div className="grid grid-cols-[32px_minmax(0,1fr)] items-end gap-3">
           <AvatarDot />
-          <div className="rounded-2xl bg-[#2d2d2d] px-4 py-3 text-sm">
+          <div className="rounded-md bg-[#2d2d2d] px-4 py-3 text-sm">
             <p className="whitespace-pre-wrap break-words">{dmText}</p>
             <button
-              className="mt-3 w-full rounded-lg bg-[#3c3c3c] px-3 py-2 font-bold"
+              className="mt-3 w-full rounded-md bg-[#3c3c3c] px-3 py-2 font-bold"
               type="button"
             >
               Click

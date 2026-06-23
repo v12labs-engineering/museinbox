@@ -20,7 +20,7 @@ export default function LoginPage() {
         className="mx-auto grid w-full max-w-6xl gap-5 self-center lg:grid-cols-[0.9fr_1.1fr]"
         aria-label="Continue with Instagram"
       >
-        <Card className="muse-panel-shadow border-border/80 bg-card/92">
+        <Card className="border-border/80 bg-card/92">
           <CardContent className="flex min-h-[560px] flex-col justify-center p-6 sm:p-9">
             <Link
               className="mb-12 flex min-w-0 items-center gap-3"
@@ -75,9 +75,9 @@ export default function LoginPage() {
           </CardContent>
         </Card>
 
-        <Card className="muse-panel-shadow overflow-hidden border-border/80 bg-card/80">
+        <Card className="overflow-hidden border-border/80 bg-card/80">
           <CardContent className="grid min-h-[560px] place-items-center p-6 sm:p-9">
-            <div className="w-full max-w-[390px] rounded-[2rem] border border-border bg-background p-4 shadow-2xl">
+            <div className="w-full max-w-[390px] rounded-md border border-border bg-background p-4">
               <div className="mb-4 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="grid size-9 place-items-center rounded-full bg-primary/10 text-primary">
@@ -93,8 +93,8 @@ export default function LoginPage() {
                 <Badge variant="secondary">Live</Badge>
               </div>
 
-              <div className="aspect-square rounded-[1.4rem] bg-[linear-gradient(145deg,#e8f3f1,#0f766e)] p-4">
-                <div className="flex h-full flex-col justify-end rounded-[1rem] bg-slate-950/10 p-4 text-white">
+              <div className="aspect-square rounded-md bg-[linear-gradient(145deg,#e8f3f1,#0f766e)] p-4">
+                <div className="flex h-full flex-col justify-end rounded-sm bg-slate-950/10 p-4 text-white">
                   <p className="max-w-[230px] text-2xl font-black leading-tight">
                     Comment “LINK” and get the guide in DM
                   </p>
@@ -102,11 +102,11 @@ export default function LoginPage() {
               </div>
 
               <div className="mt-4 space-y-3">
-                <div className="ml-8 flex items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-sm">
+                <div className="ml-8 flex items-center gap-3 rounded-md border border-border bg-card p-3">
                   <MessageCircle className="size-4 text-primary" />
                   <span className="text-sm font-bold">link please</span>
                 </div>
-                <div className="muse-alert-success rounded-2xl border p-3">
+                <div className="muse-alert-success rounded-md border p-3">
                   <div className="flex items-center gap-3">
                     <CheckCircle2 className="muse-text-success size-5" />
                     <div>

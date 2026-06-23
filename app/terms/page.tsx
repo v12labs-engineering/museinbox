@@ -34,7 +34,7 @@ const sections = [
 export default function TermsPage() {
   return (
     <main className="muse-page-bg min-h-screen overflow-x-hidden p-4 text-foreground sm:p-8">
-      <Card className="muse-panel-shadow mx-auto max-w-3xl border-border/80 bg-card/92">
+      <Card className="mx-auto max-w-3xl border-border/80 bg-card/92">
         <CardContent className="p-6 sm:p-10">
           <Link
             className="mb-10 flex min-w-0 items-center gap-3"
