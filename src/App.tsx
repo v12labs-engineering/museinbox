@@ -827,7 +827,6 @@ function App({ automationRuleId, currentView }: AppProps) {
               <ActivityView activity={activity} />
             ) : currentView === "automation-form" ? (
               <AutomationWorkspace
-                activity={activity}
                 draft={draft}
                 formInvalid={formInvalid}
                 isEditingRule={isEditingRule}
@@ -1615,7 +1614,6 @@ function AutomationCards({
 type PreviewMode = "post" | "comments" | "dm";
 
 function AutomationWorkspace({
-  activity,
   draft,
   formInvalid,
   isEditingRule,
@@ -1630,7 +1628,6 @@ function AutomationWorkspace({
   sampleComment,
   selectedRule,
 }: {
-  activity: Activity[];
   draft: DraftRule;
   formInvalid: boolean;
   isEditingRule: boolean;
@@ -1703,7 +1700,6 @@ function AutomationWorkspace({
           </div>
         </CardContent>
       </Card>
-      <ActivityCard activity={activity} compact />
     </aside>
   );
 }
@@ -2260,23 +2256,17 @@ function ActivityView({ activity }: { activity: Activity[] }) {
   );
 }
 
-function ActivityCard({
-  activity,
-  compact = false,
-}: {
-  activity: Activity[];
-  compact?: boolean;
-}) {
+function ActivityCard({ activity }: { activity: Activity[] }) {
   return (
     <Card className="min-w-0 overflow-hidden border-border/80 bg-card/92">
       <CardHeader>
         <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
           Activity
         </CardDescription>
-        <CardTitle>{compact ? "Recent" : "Recent comment matches"}</CardTitle>
+        <CardTitle>Recent comment matches</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className={cn("grid min-w-0 gap-3", compact && "max-h-[520px] overflow-auto pr-1")}>
+        <div className="grid min-w-0 gap-3">
           {activity.length === 0 ? (
             <EmptyState
               icon={MessageCircle}
@@ -2324,19 +2314,11 @@ function ActivityCard({
                     </p>
                   </div>
                 ) : null}
-                {entry.diagnosticId || entry.deliveryAttempts?.length ? (
+                {entry.deliveryAttempts?.length ? (
                   <div className="mt-2 min-w-0 rounded-lg border border-border bg-muted/35 p-3 text-xs text-muted-foreground">
-                    {entry.diagnosticId ? (
-                      <p className="font-black">
-                        Debug ID:{" "}
-                        <span className="font-mono">{entry.diagnosticId}</span>
-                      </p>
-                    ) : null}
-                    {entry.deliveryAttempts?.length ? (
-                      <p className="mt-1 break-words font-semibold">
-                        Routes: {entry.deliveryAttempts.join(" -> ")}
-                      </p>
-                    ) : null}
+                    <p className="break-words font-semibold">
+                      Routes: {entry.deliveryAttempts.join(" -> ")}
+                    </p>
                   </div>
                 ) : null}
                 {entry.warning ? (
