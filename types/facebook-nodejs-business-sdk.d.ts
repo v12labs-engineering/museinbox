@@ -10,10 +10,4 @@ declare module "facebook-nodejs-business-sdk" {
       urlOverride?: string,
     ): Promise<unknown>;
   }
-
-  const sdk: {
-    FacebookAdsApi: typeof FacebookAdsApi;
-  };
-
-  export default sdk;
 }

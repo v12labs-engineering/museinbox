@@ -8,9 +8,9 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import bizSdk from "facebook-nodejs-business-sdk";
+import { FacebookAdsApi } from "facebook-nodejs-business-sdk";
 import {
   cleanDraftRule,
   composeCommentReply,
@@ -21,8 +21,6 @@ import {
   type DraftRule,
   type Rule,
 } from "../src/shared/automation";
-
-const { FacebookAdsApi } = bizSdk;
 
 type DataFile = {
   rules: Rule[];
@@ -65,12 +63,11 @@ type FairUseState = {
 type InstagramWebhookEvent = {
   id: string;
   accountId?: string;
-  kind: "comment" | "mention" | "message";
+  kind: "comment";
   text: string;
   mediaId?: string;
   replyTarget:
     | { type: "comment"; commentId: string }
-    | { type: "message"; senderId: string }
     | { type: "unsupported" };
 };
 
@@ -146,7 +143,6 @@ const fairUseLimits = {
 };
 const defaultScopes = [
   "instagram_business_basic",
-  "instagram_business_manage_messages",
   "instagram_business_manage_comments",
 ].join(",");
 const requiredInstagramPermissions = defaultScopes.split(",");
@@ -239,17 +235,13 @@ export async function handleApiRequest(request: Request) {
       request.method === "POST" &&
       pathname === "/api/auth/instagram/deauthorize"
     ) {
-      return handleInstagramDeauthorize();
+      return handleInstagramDeauthorize(request);
     }
 
     if (
-      (request.method === "GET" || request.method === "POST") &&
-      pathname === "/api/auth/instagram/data-deletion"
+      (request.method === "DELETE" || request.method === "POST") &&
+      pathname === "/api/account/delete"
     ) {
-      return handleInstagramDataDeletionRequest(request);
-    }
-
-    if (request.method === "POST" && pathname === "/api/account/delete") {
       return deleteAccountData(request);
     }
 
@@ -592,24 +584,38 @@ async function disconnectInstagram(request: Request) {
 }
 
 async function deleteAccountData(request: Request) {
-  const stateId = getRequestStateId(request);
-  await writeData(emptyAccountData(), stateId);
+  const stateId = getAuthenticatedRequestStateId(request);
+  if (!stateId) {
+    return json(401, { error: "Authentication required" });
+  }
+
+  const data = await readData(stateId);
+  const instagramUserId = data.integration?.userId;
+  const stateIds = instagramUserId
+    ? await findStateIdsForInstagramAccount(instagramUserId)
+    : [stateId];
+  if (!stateIds.includes(stateId)) {
+    stateIds.push(stateId);
+  }
+  await deleteStateData(stateIds);
   return json(200, { ok: true }, [
     clearCookie(sessionCookieName),
     clearCookie(oauthCookieName),
   ]);
 }
 
-function handleInstagramDeauthorize() {
-  return json(200, { ok: true });
-}
+async function handleInstagramDeauthorize(request: Request) {
+  const signedRequest = await readVerifiedMetaSignedRequest(request);
+  if (!signedRequest) {
+    return json(403, { error: "Invalid Meta signed_request" });
+  }
 
-function handleInstagramDataDeletionRequest(request: Request) {
-  const confirmationCode = createDiagnosticId("data_deletion");
-  return json(200, {
-    url: new URL("/data-deletion", request.url).toString(),
-    confirmation_code: confirmationCode,
+  const deletedStateIds = await deleteInstagramAccountData(signedRequest.userId);
+  logDiagnostic("instagram_deauthorized", {
+    instagramUserId: safeId(signedRequest.userId),
+    deletedStateIds: deletedStateIds.map(safeId),
   });
+  return json(200, { ok: true });
 }
 
 function verifyWebhook(requestUrl: URL) {
@@ -669,10 +675,6 @@ async function sendWebhookReply(
 ) {
   if (replyTarget.type === "comment") {
     return sendPrivateReply(data, replyTarget.commentId, message, diagnosticId);
-  }
-
-  if (replyTarget.type === "message") {
-    return sendInstagramMessage(data, replyTarget.senderId, message, diagnosticId);
   }
 
   return {
@@ -892,62 +894,6 @@ async function sendInstagramCommentReply(
   return { ok: true, status: "sent" as const, attempts: [`${route}: sent`] };
 }
 
-async function sendInstagramMessage(
-  data: DataFile,
-  senderId: string,
-  message: string,
-  diagnosticId: string,
-): Promise<SendReplyResult> {
-  const accessToken = getAccessToken(data);
-  logDiagnostic("message_reply_start", {
-    diagnosticId,
-    senderId: safeId(senderId),
-    hasAccessToken: Boolean(accessToken),
-    messageLength: message.length,
-  });
-
-  if (process.env.INSTAGRAM_DRY_RUN === "true") {
-    logDiagnostic("message_reply_dry_run", { diagnosticId });
-    return { ok: true, status: "dry_run" as const };
-  }
-
-  if (!accessToken) {
-    logDiagnostic("message_reply_missing_token", { diagnosticId });
-    return { ok: false, error: "Connect Instagram first" };
-  }
-
-  const body = new URLSearchParams({
-    recipient: JSON.stringify({ id: senderId }),
-    message: JSON.stringify({ text: message }),
-    access_token: accessToken,
-  });
-  const result = await fetch(
-    `${instagramGraphBaseUrl()}/${getGraphVersion()}/me/messages`,
-    {
-      method: "POST",
-      body,
-    },
-  );
-
-  if (!result.ok) {
-    const error = await result.text();
-    logDiagnostic("message_reply_failed", {
-      diagnosticId,
-      route: "Instagram me/messages",
-      status: result.status,
-      error: summarizeMetaError(error),
-    });
-    return { ok: false, error };
-  }
-
-  logDiagnostic("message_reply_sent", {
-    diagnosticId,
-    route: "Instagram me/messages",
-    status: result.status,
-  });
-  return { ok: true, status: "sent" as const };
-}
-
 async function processInstagramEvent(
   data: DataFile,
   event: InstagramWebhookEvent,
@@ -961,9 +907,7 @@ async function processInstagramEvent(
     replyTarget:
       event.replyTarget.type === "comment"
         ? { type: "comment", commentId: safeId(event.replyTarget.commentId) }
-        : event.replyTarget.type === "message"
-          ? { type: "message", senderId: safeId(event.replyTarget.senderId) }
-          : { type: "unsupported" },
+        : { type: "unsupported" },
     rules: data.rules.length,
     activeRules: data.rules.filter((rule) => rule.active).length,
     hasInstagramAccess: Boolean(getInstagramAccessToken(data)),
@@ -1000,21 +944,14 @@ async function processInstagramEvent(
     externalId:
       event.replyTarget.type === "comment"
         ? event.replyTarget.commentId
-        : event.replyTarget.type === "message"
-          ? event.replyTarget.senderId
-          : event.id,
+        : event.id,
     comment: event.text || "(empty comment)",
     matchedRuleName: matchedRule?.name ?? "No matching rule",
     dm: dm || "No DM generated",
     commentReply: commentReply || undefined,
     timestamp: new Date().toISOString(),
     status: matchedRule ? "dry_run" : "no_match",
-    source:
-      event.kind === "comment"
-        ? "instagram_comment"
-        : event.kind === "mention"
-          ? "instagram_mention"
-          : "instagram_message",
+    source: "instagram_comment",
     diagnosticId,
   };
 
@@ -1097,7 +1034,7 @@ function extractInstagramWebhookEvents(body: unknown): InstagramWebhookEvent[] {
           continue;
         }
 
-        if (change.field === "comments" || change.field === "mentions") {
+        if (change.field === "comments") {
           const event = webhookEventFromChange(change, accountId);
           if (event) {
             events.push(event);
@@ -1106,14 +1043,6 @@ function extractInstagramWebhookEvents(body: unknown): InstagramWebhookEvent[] {
       }
     }
 
-    if (Array.isArray(entry.messaging)) {
-      for (const messageEvent of entry.messaging) {
-        const event = webhookEventFromMessaging(messageEvent, accountId);
-        if (event) {
-          events.push(event);
-        }
-      }
-    }
   }
 
   return events;
@@ -1139,42 +1068,14 @@ function webhookEventFromChange(change: Record<string, unknown>, accountId?: str
   }
 
   return {
-    id: commentId || stringFrom(value.mention_id) || randomUUID(),
+    id: commentId || randomUUID(),
     accountId,
-    kind: change.field === "mentions" ? "mention" as const : "comment" as const,
+    kind: "comment" as const,
     text: textValue,
     mediaId: mediaId || undefined,
     replyTarget: commentId
       ? { type: "comment" as const, commentId }
       : { type: "unsupported" as const },
-  };
-}
-
-function webhookEventFromMessaging(messageEvent: unknown, accountId?: string) {
-  if (!isRecord(messageEvent)) {
-    return null;
-  }
-
-  const message = messageEvent.message;
-  if (!isRecord(message) || message.is_echo === true) {
-    return null;
-  }
-
-  const textValue = stringFrom(message.text);
-  const sender = messageEvent.sender;
-  const senderId = stringFrom(isRecord(sender) ? sender.id : undefined);
-  const messageId = stringFrom(message.mid);
-
-  if (!textValue || !senderId) {
-    return null;
-  }
-
-  return {
-    id: messageId || randomUUID(),
-    accountId,
-    kind: "message" as const,
-    text: textValue,
-    replyTarget: { type: "message" as const, senderId },
   };
 }
 
@@ -1696,11 +1597,12 @@ function missingRequiredInstagramPermissions(permissions: string[]) {
 }
 
 function resolveInstagramLoginScopes(rawScopes: string | undefined) {
+  const allowedScopes = new Set(requiredInstagramPermissions);
   const scopes = new Set(
     (rawScopes ?? "")
       .split(",")
       .map((scope) => scope.trim())
-      .filter(Boolean),
+      .filter((scope) => allowedScopes.has(scope)),
   );
   for (const scope of requiredInstagramPermissions) {
     scopes.add(scope);
@@ -1793,7 +1695,7 @@ function privateReplyReadiness(data: DataFile) {
     {
       key: "instagramPermissions",
       label: hasKnownPermissions
-        ? "Instagram comment and message permissions"
+        ? "Instagram account and comment permissions"
         : "Instagram permissions recorded",
       ready: hasKnownPermissions && missingPermissions.length === 0,
       detail: hasKnownPermissions
@@ -1948,8 +1850,14 @@ function summarizeRulePauseError(error?: string) {
 }
 
 function getRequestStateId(request: Request) {
+  return getAuthenticatedRequestStateId(request) ?? defaultStateId;
+}
+
+function getAuthenticatedRequestStateId(request: Request) {
   const session = readSignedCookie<{ stateId?: string }>(request, sessionCookieName);
-  return session?.stateId || defaultStateId;
+  return typeof session?.stateId === "string" && session.stateId.length > 0
+    ? session.stateId
+    : null;
 }
 
 function accountStateId(instagramUserId: string) {
@@ -2373,6 +2281,67 @@ function verifySignature(request: Request, rawBody: Buffer) {
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
+async function readVerifiedMetaSignedRequest(request: Request) {
+  // Meta signs app-level callbacks with the top-level App Secret. The
+  // Instagram product secret is reserved for Instagram OAuth/token exchange.
+  const appSecret = process.env.META_APP_SECRET?.trim();
+  if (!appSecret) {
+    return null;
+  }
+  const signedRequest = new URLSearchParams(await request.text()).get(
+    "signed_request",
+  );
+  if (!signedRequest) {
+    return null;
+  }
+
+  const segments = signedRequest.split(".");
+  if (
+    segments.length !== 2 ||
+    !isBase64UrlSegment(segments[0]) ||
+    !isBase64UrlSegment(segments[1])
+  ) {
+    return null;
+  }
+
+  const [encodedSignature, encodedPayload] = segments;
+  const actualSignature = Buffer.from(encodedSignature, "base64url");
+  const expectedSignature = createHmac("sha256", appSecret)
+    .update(encodedPayload)
+    .digest();
+  if (
+    actualSignature.length !== expectedSignature.length ||
+    !timingSafeEqual(actualSignature, expectedSignature)
+  ) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(
+      Buffer.from(encodedPayload, "base64url").toString("utf8"),
+    ) as unknown;
+    if (
+      !isRecord(payload) ||
+      stringFrom(payload.algorithm).toUpperCase() !== "HMAC-SHA256"
+    ) {
+      return null;
+    }
+
+    const userId = stringFrom(payload.user_id).trim();
+    if (!/^\d{1,64}$/.test(userId)) {
+      return null;
+    }
+
+    return { userId };
+  } catch {
+    return null;
+  }
+}
+
+function isBase64UrlSegment(value: string) {
+  return /^[A-Za-z0-9_-]+={0,2}$/.test(value);
+}
+
 function validateDraft(draft: DraftRule) {
   if (!draft.name || !draft.message) {
     throw new Error("Rule name and DM message are required");
@@ -2414,6 +2383,37 @@ async function writeData(data: DataFile, stateId = defaultStateId) {
 
   await mkdir(dataDirectory, { recursive: true });
   await writeFile(localDataPathForState(stateId), JSON.stringify(data, null, 2));
+}
+
+async function deleteInstagramAccountData(instagramUserId: string) {
+  const stateIds = await findStateIdsForInstagramAccount(instagramUserId);
+  const directStateId = accountStateId(instagramUserId);
+  if (!stateIds.includes(directStateId)) {
+    stateIds.push(directStateId);
+  }
+
+  await deleteStateData(stateIds);
+  return stateIds;
+}
+
+async function findStateIdsForInstagramAccount(instagramUserId: string) {
+  return hasSupabaseConfig()
+    ? findSupabaseStateIdsForInstagramAccount(instagramUserId)
+    : [accountStateId(instagramUserId)];
+}
+
+async function deleteStateData(stateIds: string[]) {
+  const uniqueStateIds = [...new Set(stateIds.filter(Boolean))];
+  if (hasSupabaseConfig()) {
+    for (const stateId of uniqueStateIds) {
+      await deleteSupabaseData(stateId);
+    }
+    return;
+  }
+
+  for (const stateId of uniqueStateIds) {
+    await rm(localDataPathForState(stateId), { force: true });
+  }
 }
 
 function hasSupabaseConfig() {
@@ -2462,6 +2462,94 @@ async function writeSupabaseData(data: DataFile, stateId: string) {
 
   if (!response.ok) {
     throw new Error(`Supabase write failed: ${await response.text()}`);
+  }
+}
+
+async function findSupabaseStateIdsForInstagramAccount(
+  instagramUserId: string,
+) {
+  const directStateId = accountStateId(instagramUserId);
+  const stateIds = new Set<string>();
+  for (const row of await listSupabaseStateRows()) {
+    const stateId = stringFrom(row.id);
+    if (
+      stateId &&
+      (stateId === directStateId ||
+        stateDataMatchesInstagramAccount(row.data, instagramUserId))
+    ) {
+      stateIds.add(stateId);
+    }
+  }
+
+  return [...stateIds];
+}
+
+async function listSupabaseStateRows() {
+  const rows: Array<{ id?: unknown; data?: unknown }> = [];
+  const pageSize = 500;
+  let offset = 0;
+
+  while (true) {
+    const url = supabaseRestUrl();
+    url.searchParams.set("select", "id,data");
+    url.searchParams.set("order", "id.asc");
+    url.searchParams.set("limit", String(pageSize));
+    url.searchParams.set("offset", String(offset));
+    const response = await fetch(url, {
+      headers: supabaseHeaders(),
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw new Error(`Supabase state lookup failed: ${await response.text()}`);
+    }
+
+    const page = (await response.json()) as Array<{
+      id?: unknown;
+      data?: unknown;
+    }>;
+    if (page.length === 0) {
+      return rows;
+    }
+
+    rows.push(...page);
+    offset += page.length;
+  }
+}
+
+function stateDataMatchesInstagramAccount(
+  value: unknown,
+  instagramUserId: string,
+) {
+  if (!isRecord(value) || !isRecord(value.integration)) {
+    return false;
+  }
+
+  const integration = value.integration;
+  const accountIds = [
+    stringFrom(integration.userId),
+    stringFrom(integration.graphAccountId),
+    stringFrom(integration.webhookUserId),
+    ...(Array.isArray(integration.webhookAccountIds)
+      ? integration.webhookAccountIds.filter(
+          (accountId): accountId is string => typeof accountId === "string",
+        )
+      : []),
+  ];
+  return accountIds.includes(instagramUserId);
+}
+
+async function deleteSupabaseData(stateId: string) {
+  const url = supabaseRestUrl();
+  url.searchParams.set("id", `eq.${stateId}`);
+  const response = await fetch(url, {
+    method: "DELETE",
+    headers: {
+      ...supabaseHeaders(),
+      Prefer: "return=minimal",
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Supabase delete failed: ${await response.text()}`);
   }
 }
 
@@ -2538,16 +2626,6 @@ function normalizeIntegration(value: unknown): InstagramIntegration {
     oauthRedirectUri: stringFrom(value.oauthRedirectUri) || undefined,
     oauthAuthorizeUrl: stringFrom(value.oauthAuthorizeUrl) || undefined,
     lastOAuthError: stringFrom(value.lastOAuthError) || undefined,
-  };
-}
-
-function emptyAccountData(): DataFile {
-  return {
-    rules: [],
-    activity: [],
-    processedCommentIds: [],
-    integration: {},
-    fairUse: { day: currentUsageDay(), dmSendAttempts: 0, commentChecks: 0 },
   };
 }
 
@@ -2651,6 +2729,7 @@ async function readJson<T>(request: Request): Promise<T> {
 
 function json(statusCode: number, payload: unknown, cookies: string[] = []) {
   const headers = new Headers();
+  headers.set("Cache-Control", "no-store");
   for (const cookie of cookies) {
     headers.append("Set-Cookie", cookie);
   }

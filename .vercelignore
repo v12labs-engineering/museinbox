@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+.git/
+.next/
+node_modules/
+artifacts/
+docs/meta-review-*.md

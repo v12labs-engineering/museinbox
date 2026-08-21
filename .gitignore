@@ -7,8 +7,10 @@ node_modules/
 .next/
 dist/
 coverage/
+*.tsbuildinfo
 
 .museinbox/
+artifacts/
 *.log
 museinbox-*.png
 .vercel

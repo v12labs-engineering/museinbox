@@ -6,20 +6,28 @@ import { MuseInboxLogo } from "../../src/App";
 
 const steps = [
   {
-    title: "Disconnect Instagram",
-    body: "Open MuseInbox settings and choose Disconnect Instagram. This removes the stored Instagram connection token from MuseInbox.",
+    title: "Option 1: Delete Data in MuseInbox",
+    body: "While your Instagram professional account is connected, open Settings, find Delete MuseInbox data, choose Delete all my data, and confirm Delete my data. When the request succeeds, MuseInbox clears that Instagram account's active data record and signs the browser out.",
   },
   {
-    title: "Delete your data in Settings",
-    body: "When you are signed in, open MuseInbox settings and choose Delete all my data. This removes stored rules, activity, processed comment history, and integration data for that Instagram account.",
+    title: "What the In-App Action Deletes",
+    body: "The action removes saved automation rules, keywords, selected-media details, message and reply templates, links, recent activity and delivery results, stored comment or message text and external identifiers in that activity, processed comment IDs, fair-use counters, Instagram account identifiers and connection metadata, granted-permission records, and the encrypted access token from the active MuseInbox account record.",
   },
   {
-    title: "Request deletion by email",
-    body: "If you cannot access the app, email us with the Instagram account ID or email address used with MuseInbox, and we will delete stored rules, activity, and integration data associated with that account.",
+    title: "Disconnecting Is Not Full Deletion",
+    body: "Choosing Disconnect Instagram removes the saved access token and connection metadata and signs the browser out, but it does not delete saved automation rules or activity. Use Delete all my data if you want the full MuseInbox account record removed.",
   },
   {
-    title: "Confirmation",
-    body: "After deletion is complete, we will send a confirmation email. Some server logs may remain temporarily for security and reliability purposes.",
+    title: "Option 2: Request Deletion by Email",
+    body: "If you cannot use the in-app control, email pranushathokala895@gmail.com with the subject “MuseInbox Instagram Data Deletion Request.” Include the Instagram username for the connected Business or Creator account, its numerical Instagram account ID if you know it, and a link to the Instagram profile. MuseInbox uses Instagram authorization rather than an email-and-password login, so the email address you send from does not need to match an account email.",
+  },
+  {
+    title: "Verification and Timeline",
+    body: "To prevent unauthorized deletion, we may ask for reasonable proof that you control the named Instagram account. Do not send your Instagram password or access token. We will complete a verified email request within 30 days and send confirmation to the email address used for the request. The in-app deletion takes effect on the active MuseInbox account record when the app confirms success.",
+  },
+  {
+    title: "Data Outside MuseInbox",
+    body: "Deleting MuseInbox data does not delete the original posts, reels, comments, profile information, or messages held by Instagram, and it cannot recall direct messages or public replies already delivered to recipients. Manage that information through Instagram. Limited copies may remain temporarily in routine provider backups or security logs until those systems rotate them, or longer only when required for security, dispute resolution, or law.",
   },
 ];
 
@@ -45,7 +53,7 @@ export default function DataDeletionPage() {
           </Link>
 
           <Badge className="mb-4 bg-primary/10 text-primary hover:bg-primary/10">
-            Effective 13 June 2026
+            Effective 11 July 2026
           </Badge>
           <h1 className="text-4xl font-black tracking-tight sm:text-5xl">
             Data Deletion Instructions
@@ -81,7 +89,8 @@ export default function DataDeletionPage() {
                 >
                   pranushathokala895@gmail.com
                 </a>
-                .
+                . Include only the account-identifying details described above;
+                never send a password or access token.
               </p>
             </section>
           </div>

@@ -6,7 +6,7 @@ Local-first Instagram automation dashboard for creating simple rules like:
 - when someone comments anything, send this DM
 - preview which rule would match before connecting live events
 
-The current app supports Instagram OAuth for Business and Creator accounts, post/reel comment webhooks, mentions, and incoming message/story-reply style webhooks.
+The current review-ready app supports Instagram OAuth for Business and Creator accounts, post/reel comment webhooks, mentions, and comment-triggered private replies.
 
 ## Development
 
@@ -28,6 +28,13 @@ The built-in Instagram Login flow should request only Instagram permissions.
 Do not add `pages_read_engagement` or `pages_show_list` to
 `INSTAGRAM_OAUTH_SCOPES`; those belong to the separate Facebook Login for
 Business flow, not the Instagram OAuth URL used by this app.
+
+For the current comment-automation flow, keep `INSTAGRAM_OAUTH_SCOPES` limited
+to `instagram_business_basic` and `instagram_business_manage_comments`.
+Comment-triggered private replies use the source comment ID and do not require
+`instagram_business_manage_messages`. Incoming message and story-reply webhook
+handlers remain dormant unless that separate messaging capability is added and
+reviewed in a future release.
 
 ## Supabase Storage
 

@@ -366,9 +366,11 @@ function App({ automationRuleId, currentView }: AppProps) {
       setRules(nextRules);
       setActivity(nextActivity);
       setStatus(nextStatus);
+      let routeRule: Rule | null = null;
       if (currentView === "automation-form") {
-        const routeRule = automationRuleId
+        routeRule = automationRuleId
           ? nextRules.find((rule) => rule.id === automationRuleId)
+            ?? null
           : null;
         setSelectedRuleId(routeRule?.id ?? null);
         setDraft(routeRule ? ruleToDraft(routeRule) : emptyDraft);
@@ -384,6 +386,9 @@ function App({ automationRuleId, currentView }: AppProps) {
       setError("");
       if (nextStatus.connected) {
         await loadInstagramMedia();
+        if (currentView === "automation-form") {
+          setDraft(routeRule ? ruleToDraft(routeRule) : emptyDraft);
+        }
       } else {
         setMedia([]);
       }
@@ -827,6 +832,7 @@ function App({ automationRuleId, currentView }: AppProps) {
               <ActivityView activity={activity} />
             ) : currentView === "automation-form" ? (
               <AutomationWorkspace
+                accountName={status?.instagramUsername ?? "instagram.account"}
                 draft={draft}
                 formInvalid={formInvalid}
                 isEditingRule={isEditingRule}
@@ -1614,6 +1620,7 @@ function AutomationCards({
 type PreviewMode = "post" | "comments" | "dm";
 
 function AutomationWorkspace({
+  accountName,
   draft,
   formInvalid,
   isEditingRule,
@@ -1628,6 +1635,7 @@ function AutomationWorkspace({
   sampleComment,
   selectedRule,
 }: {
+  accountName: string;
   draft: DraftRule;
   formInvalid: boolean;
   isEditingRule: boolean;
@@ -1673,6 +1681,7 @@ function AutomationWorkspace({
             />
             <div className="grid gap-3">
               <PhoneAutomationPreview
+                accountName={accountName}
                 draft={draft}
                 matchedRule={matchedRule}
                 sampleComment={sampleComment}
@@ -1727,6 +1736,9 @@ function AutomationForm({
   submitLabel: string;
   onCancel?: () => void;
 }) {
+  const hasSelectedMediaOption =
+    !draft.mediaId || media.some((item) => item.id === draft.mediaId);
+
   return (
     <form className="grid min-w-0 gap-4" onSubmit={onSaveRule}>
       <div className="grid gap-2">
@@ -1799,6 +1811,11 @@ function AutomationForm({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All posts and reels</SelectItem>
+          {!hasSelectedMediaOption && draft.mediaId ? (
+            <SelectItem value={draft.mediaId}>
+              {draft.postLabel || "Selected post or reel"}
+            </SelectItem>
+          ) : null}
           {media.map((item) => (
             <SelectItem key={item.id} value={item.id}>
               {mediaLabel(item)}
@@ -1907,18 +1924,19 @@ function AutomationForm({
 }
 
 function PhoneAutomationPreview({
+  accountName,
   draft,
   matchedRule,
   sampleComment,
   selectedMedia,
 }: {
+  accountName: string;
   draft: DraftRule;
   matchedRule: Rule | null;
   sampleComment: string;
   selectedMedia: InstagramMediaItem | null;
 }) {
   const [mode, setMode] = useState<PreviewMode>("post");
-  const accountName = "momlife.with.pranu";
   const dmText = composeDraftDm(draft) || "Your DM message will appear here.";
   const commentReply = draft.commentReply?.trim() || "Sent you the details in DM.";
   const postTitle = selectedMedia ? mediaTitle(selectedMedia) : "Selected post preview";
@@ -2358,11 +2376,11 @@ function SettingsView({
   status: InstagramStatus | null;
 }) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const displayPermissions = [
-    "instagram_business_basic",
-    "instagram_business_manage_messages",
-    "instagram_business_manage_comments",
-  ];
+  const requiredPermissions =
+    status?.privateReplyReadiness?.requiredPermissions ?? [
+      "instagram_business_basic",
+      "instagram_business_manage_comments",
+    ];
   const instagramAccountLabel = status?.instagramUsername
     ? `@${status.instagramUsername}`
     : connected
@@ -2477,12 +2495,16 @@ function SettingsView({
           <CardDescription className="font-bold uppercase tracking-[0.16em] text-primary">
             Access
           </CardDescription>
-          <CardTitle>Instagram permissions</CardTitle>
+          <CardTitle>Required Instagram permissions</CardTitle>
+          <p className="mt-2 text-sm text-muted-foreground">
+            MuseInbox requests only these permissions for its comment-triggered
+            private-reply flow.
+          </p>
         </CardHeader>
         <CardContent>
-          {displayPermissions.length > 0 ? (
+          {requiredPermissions.length > 0 ? (
             <div className="flex flex-wrap gap-2">
-              {displayPermissions.map((permission) => (
+              {requiredPermissions.map((permission) => (
                 <Badge key={permission} variant="secondary">
                   {permission}
                 </Badge>
@@ -2718,6 +2740,7 @@ function commentReadoutStatus(comment: InstagramCommentReadItem) {
 
 async function apiRequest<T>(path: string, options: RequestInit = {}) {
   const response = await fetch(path, {
+    cache: "no-store",
     headers: {
       "Content-Type": "application/json",
       ...options.headers,
